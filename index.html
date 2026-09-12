@@ -337,6 +337,7 @@ let state = {
     gastosIndirectosPct: 15,
     cargoRevisionAdicional: 1200,
     adicionalSublimado: 2500,
+    clavePanel: 'VP05022024*',
     whatsappNegocio: '',
     backendUrl: '',
     siguienteNumeroPedido: 1,
@@ -1060,6 +1061,14 @@ function openConfigModal(){
       <div style="height:1px;background:var(--border);margin:16px 0;"></div>
 
       <div class="field">
+        <label>Clave de acceso al panel</label>
+        <input id="fClavePanel" type="text" value="${escapeHtml(state.config.clavePanel||'')}">
+        <div class="field-note">Se pide para entrar a la gestión interna (Resumen, Productos, Movimientos, etc.). El Catálogo para clientes (Modo cliente) queda siempre abierto, sin pedir esta clave.</div>
+      </div>
+
+      <div style="height:1px;background:var(--border);margin:16px 0;"></div>
+
+      <div class="field">
         <label>WhatsApp del negocio (opcional)</label>
         <input id="fWhatsapp" value="${escapeHtml(state.config.whatsappNegocio||'')}" placeholder="Ej: 5491122334455">
         <div class="field-note">Con código de país, sin espacios ni signos. Cuando un cliente arma un pedido en el Catálogo, el botón de WhatsApp le va a abrir directo tu chat.</div>
@@ -1154,6 +1163,7 @@ function openConfigModal(){
     state.config.gastosIndirectosPct = Number(wrap.querySelector('#fGastosInd').value)||0;
     state.config.cargoRevisionAdicional = Number(wrap.querySelector('#fCargoRevision').value)||0;
     state.config.adicionalSublimado = Number(wrap.querySelector('#fAdicionalSublimado').value)||0;
+    state.config.clavePanel = wrap.querySelector('#fClavePanel').value;
     state.config.whatsappNegocio = wrap.querySelector('#fWhatsapp').value.trim().replace(/[^\d]/g,'');
     state.config.backendUrl = wrap.querySelector('#fBackendUrl').value.trim();
     const seConectaBackendNuevo = state.config.backendUrl && state.config.backendUrl !== backendUrlAnterior;
@@ -3553,6 +3563,59 @@ async function generarNumeroPedido(nombre, telefono, items, total){
   return n;
 }
 
+const KEY_DESBLOQUEADO = 'panelDesbloqueado';
+async function marcarDesbloqueado(){
+  try{ if(window.storage) await window.storage.set(KEY_DESBLOQUEADO, '1', false); }catch(e){ /* no pasa nada, queda solo para esta sesión */ }
+  try{ localStorage.setItem(KEY_DESBLOQUEADO, '1'); }catch(e){ /* algunos navegadores lo bloquean */ }
+}
+async function yaEstaDesbloqueado(){
+  try{
+    if(window.storage){
+      const r = await window.storage.get(KEY_DESBLOQUEADO, false);
+      if(r && r.value==='1') return true;
+    }
+  }catch(e){ /* sigue probando con localStorage */ }
+  try{ if(localStorage.getItem(KEY_DESBLOQUEADO)==='1') return true; }catch(e){}
+  return false;
+}
+
+function mostrarPantallaClave(){
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  app.innerHTML = `
+    <div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:20px;">
+      <img src="${state.logo}" alt="logo" style="width:64px;height:64px;border-radius:50%;object-fit:cover;">
+      <div style="text-align:center;">
+        <div class="brand-name" style="font-size:19px;">${escapeHtml(state.config.nombreEmprendimiento)}</div>
+        <div class="brand-sub2">Panel de gestión — acceso restringido</div>
+      </div>
+      <div style="width:100%;max-width:320px;">
+        <div class="field">
+          <label>Clave de acceso</label>
+          <input id="fClaveIngresada" type="password" placeholder="Ingresá la clave">
+        </div>
+        <div id="errorClave" style="color:var(--red);font-size:12.5px;margin:-6px 0 10px;display:none;">Clave incorrecta. Probá de nuevo.</div>
+        <button class="btn btn-primary" id="btnEntrar" style="width:100%;justify-content:center;">Entrar</button>
+      </div>
+    </div>
+  `;
+  const input = document.getElementById('fClaveIngresada');
+  const error = document.getElementById('errorClave');
+  input.focus();
+  async function intentarEntrar(){
+    if(input.value === state.config.clavePanel){
+      await marcarDesbloqueado();
+      render();
+    }else{
+      error.style.display = 'block';
+      input.value = '';
+      input.focus();
+    }
+  }
+  document.getElementById('btnEntrar').addEventListener('click', intentarEntrar);
+  input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') intentarEntrar(); });
+}
+
 init();
 async function init(){
   await loadAll();
@@ -3563,6 +3626,13 @@ async function init(){
       state.view = 'catalogo';
     }
   }catch(e){ /* ignorar si no hay acceso a location */ }
+
+  // El catálogo para clientes queda siempre abierto, sin pedir clave.
+  // Solo se protege la gestión interna.
+  if(!state.modoCliente && state.config.clavePanel){
+    const desbloqueado = await yaEstaDesbloqueado();
+    if(!desbloqueado){ mostrarPantallaClave(); return; }
+  }
   render();
 }
 </script>
