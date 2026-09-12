@@ -425,6 +425,8 @@ function normalizarProductosDeBackend(lista){
     costoAnterior: p.costoAnterior===''||p.costoAnterior==null ? null : Number(p.costoAnterior),
     fechaCambioCosto: p.fechaCambioCosto || null,
     tieneImagen: !!p.imagenUrl,
+    imagenUrl: p.imagenUrl || null,
+    imagenSublimadaUrl: p.imagenSublimadaUrl || null,
   }));
 }
 function normalizarMovimientosDeBackend(lista){
@@ -620,24 +622,28 @@ async function recargarDatosPrincipal(){
   }
 }
 
-async function getImage(id){
+async function getImage(id, tipo='blanco'){
   const p = findProd(id);
-  if(p && p.imagenUrl) return p.imagenUrl; // viene de Drive vía el backend: funciona en cualquier dispositivo
-  if(state.images[id] !== undefined) return state.images[id];
+  const campo = tipo==='sublimado' ? 'imagenSublimadaUrl' : 'imagenUrl';
+  if(p && p[campo]) return p[campo]; // viene de Drive vía el backend: funciona en cualquier dispositivo
+  const claveLocal = id + ':' + tipo;
+  if(state.images[claveLocal] !== undefined) return state.images[claveLocal];
   try{
-    const r = await window.storage.get('img:'+id, false);
-    state.images[id] = r ? r.value : null;
-  }catch(e){ state.images[id] = null; }
-  return state.images[id];
+    const r = await window.storage.get('img:'+claveLocal, false);
+    state.images[claveLocal] = r ? r.value : null;
+  }catch(e){ state.images[claveLocal] = null; }
+  return state.images[claveLocal];
 }
-async function setImage(id, dataUrl){
-  state.images[id] = dataUrl; // vista previa inmediata mientras se termina de guardar
+async function setImage(id, dataUrl, tipo='blanco'){
+  const claveLocal = id + ':' + tipo;
+  state.images[claveLocal] = dataUrl; // vista previa inmediata mientras se termina de guardar
   const p = findProd(id);
+  const campo = tipo==='sublimado' ? 'imagenSublimadaUrl' : 'imagenUrl';
   if(state.config.backendUrl){
-    const r = await apiCall('guardarImagenProducto', {productoId: id, imagen: dataUrl});
+    const r = await apiCall('guardarImagenProducto', {productoId: id, imagen: dataUrl, tipo});
     if(r && r.ok && r.url){
       if(p){
-        p.imagenUrl = r.url;
+        p[campo] = r.url;
         p.tieneImagen = true;
         syncBackend('guardarProducto', {producto: p});
       }
@@ -648,7 +654,7 @@ async function setImage(id, dataUrl){
     return false;
   }
   // sin backend conectado, esto solo persiste mientras estés adentro de Claude
-  const ok = await storageSetConReintento('img:'+id, dataUrl, false);
+  const ok = await storageSetConReintento('img:'+claveLocal, dataUrl, false);
   if(!ok) toast('⚠️ Para que las fotos se guarden fuera de Claude, conectá un backend en Configuración.');
   return ok;
 }
@@ -1319,16 +1325,23 @@ async function renderProductosBody(main){
   for(const p of lista){
     if(miGen !== prodRenderGen) return; // una búsqueda más nueva ya está en curso: abandonar esta
     const tr = document.createElement('tr');
-    const img = await getImage(p.id);
+    const imgBlanco = await getImage(p.id, 'blanco');
+    const imgSublimado = await getImage(p.id, 'sublimado');
     const stock = stockPropio(p.id);
     const m = margenPct(p);
     tr.innerHTML = `
       <td>
         <div class="prod-cell">
-          <label class="prod-thumb-empty" style="cursor:pointer;overflow:hidden;position:relative;">
-            ${img ? `<img class="prod-thumb" src="${img}" style="position:absolute;inset:0;">` : '🖼'}
-            <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;" data-img-for="${p.id}">
-          </label>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <label class="prod-thumb-empty" style="cursor:pointer;overflow:hidden;position:relative;" title="Foto sin sublimar (blanco)">
+              ${imgBlanco ? `<img class="prod-thumb" src="${imgBlanco}" style="position:absolute;inset:0;">` : '🖼'}
+              <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;" data-img-for="${p.id}" data-img-tipo="blanco">
+            </label>
+            <label class="prod-thumb-empty" style="cursor:pointer;overflow:hidden;position:relative;border-color:var(--teal);" title="Foto sublimada (ejemplo)">
+              ${imgSublimado ? `<img class="prod-thumb" src="${imgSublimado}" style="position:absolute;inset:0;">` : '🔥'}
+              <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;" data-img-for="${p.id}" data-img-tipo="sublimado">
+            </label>
+          </div>
           <div style="min-width:0;flex:1;">
             <div class="value-view" data-field="nombre" data-id="${p.id}">
               <span class="value-text name-text">${escapeHtml(p.nombre)}</span>
@@ -1337,6 +1350,7 @@ async function renderProductosBody(main){
               ${categoriaBadge(p.categoria, p.id)}
             </div>
             <div class="prod-code mono">${escapeHtml(p.codigoInterno||'—')} · ${escapeHtml(p.codigo||'—')}</div>
+            <div class="field-note" style="margin:2px 0 0;">🖼 sin sublimar · 🔥 sublimado (ejemplo)</div>
           </div>
         </div>
       </td>
@@ -1427,7 +1441,7 @@ async function renderProductosBody(main){
     });
   });
   tbody.querySelectorAll('[data-img-for]').forEach(inp=>{
-    inp.addEventListener('change', (e)=>handleImageUpload(e, inp.dataset.imgFor, ()=>renderProductosBody(main)));
+    inp.addEventListener('change', (e)=>handleImageUpload(e, inp.dataset.imgFor, ()=>renderProductosBody(main), inp.dataset.imgTipo||'blanco'));
   });
   tbody.querySelectorAll('[data-costeo]').forEach(cell=>{
     cell.addEventListener('click', ()=>openCosteoModal(cell.dataset.costeo, ()=>renderProductosBody(main)));
@@ -1717,7 +1731,7 @@ function openCostoSimpleModal(p, onDone){
   });
 }
 
-function handleImageUpload(e, prodId, onDone){
+function handleImageUpload(e, prodId, onDone, tipo='blanco'){
   const file = e.target.files[0];
   if(!file) return;
   const reader = new FileReader();
@@ -1731,10 +1745,10 @@ function handleImageUpload(e, prodId, onDone){
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img,0,0,canvas.width,canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
-      const guardadaOk = await setImage(prodId, dataUrl);
+      const guardadaOk = await setImage(prodId, dataUrl, tipo);
       if(guardadaOk){
         const p = findProd(prodId);
-        if(p && !p.imagenUrl){ p.tieneImagen = true; await saveProductos(); }
+        if(p && !p.imagenUrl && !p.imagenSublimadaUrl){ p.tieneImagen = true; await saveProductos(); }
         toast('Imagen actualizada');
       }
       onDone();
@@ -3406,7 +3420,7 @@ async function renderCatalogoGrid(main){
     if(miGen !== catRenderGen) return;
     const card = document.createElement('div');
     card.className = 'cat-card';
-    const img = await getImage(p.id);
+    const img = (await getImage(p.id, 'sublimado')) || (await getImage(p.id, 'blanco'));
     const stock = stockPropio(p.id);
     const enCarrito = cartFind(p.id);
     card.innerHTML = `
@@ -3482,7 +3496,7 @@ async function openCarritoModal(main){
     for(const item of state.cart){
       const p = findProd(item.productoId);
       if(!p) continue;
-      const img = await getImage(p.id);
+      const img = (await getImage(p.id, 'sublimado')) || (await getImage(p.id, 'blanco'));
       filas.push(`
         <div class="cart-line" data-line="${p.id}">
           ${img ? `<img class="cart-line-img" src="${img}">` : `<div class="cart-line-img"></div>`}
