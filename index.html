@@ -641,14 +641,16 @@ async function setImage(id, dataUrl){
         p.tieneImagen = true;
         syncBackend('guardarProducto', {producto: p});
       }
-    }else{
-      toast('⚠️ No se pudo subir la imagen a tu backend. Reintentá en un momento.');
+      return true;
     }
-    return;
+    const detalle = (r && r.error) ? ` (${r.error})` : '';
+    toast(`⚠️ No se pudo subir la imagen a tu backend${detalle}. Reintentá en un momento.`);
+    return false;
   }
   // sin backend conectado, esto solo persiste mientras estés adentro de Claude
   const ok = await storageSetConReintento('img:'+id, dataUrl, false);
   if(!ok) toast('⚠️ Para que las fotos se guarden fuera de Claude, conectá un backend en Configuración.');
+  return ok;
 }
 async function setLogo(dataUrl){
   state.logo = dataUrl;
@@ -1729,10 +1731,12 @@ function handleImageUpload(e, prodId, onDone){
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img,0,0,canvas.width,canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
-      await setImage(prodId, dataUrl);
-      const p = findProd(prodId);
-      if(p){ p.tieneImagen = true; await saveProductos(); }
-      toast('Imagen actualizada');
+      const guardadaOk = await setImage(prodId, dataUrl);
+      if(guardadaOk){
+        const p = findProd(prodId);
+        if(p && !p.imagenUrl){ p.tieneImagen = true; await saveProductos(); }
+        toast('Imagen actualizada');
+      }
       onDone();
     };
     img.src = ev.target.result;
