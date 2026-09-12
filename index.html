@@ -621,6 +621,8 @@ async function recargarDatosPrincipal(){
 }
 
 async function getImage(id){
+  const p = findProd(id);
+  if(p && p.imagenUrl) return p.imagenUrl; // viene de Drive vía el backend: funciona en cualquier dispositivo
   if(state.images[id] !== undefined) return state.images[id];
   try{
     const r = await window.storage.get('img:'+id, false);
@@ -629,9 +631,24 @@ async function getImage(id){
   return state.images[id];
 }
 async function setImage(id, dataUrl){
-  state.images[id] = dataUrl;
+  state.images[id] = dataUrl; // vista previa inmediata mientras se termina de guardar
+  const p = findProd(id);
+  if(state.config.backendUrl){
+    const r = await apiCall('guardarImagenProducto', {productoId: id, imagen: dataUrl});
+    if(r && r.ok && r.url){
+      if(p){
+        p.imagenUrl = r.url;
+        p.tieneImagen = true;
+        syncBackend('guardarProducto', {producto: p});
+      }
+    }else{
+      toast('⚠️ No se pudo subir la imagen a tu backend. Reintentá en un momento.');
+    }
+    return;
+  }
+  // sin backend conectado, esto solo persiste mientras estés adentro de Claude
   const ok = await storageSetConReintento('img:'+id, dataUrl, false);
-  if(!ok) toast('⚠️ No se pudo guardar la imagen en el servidor. Reintentá en un momento.');
+  if(!ok) toast('⚠️ Para que las fotos se guarden fuera de Claude, conectá un backend en Configuración.');
 }
 async function setLogo(dataUrl){
   state.logo = dataUrl;
