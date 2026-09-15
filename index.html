@@ -669,6 +669,23 @@ async function setLogo(dataUrl){
    ========================================================= */
 function findProd(id){ return state.productos.find(p=>p.id===id); }
 
+// Autocompletado de productos: en vez de un <select> larguísimo, se usa un
+// <input list="..."> con un <datalist> — el usuario escribe "taza" y el
+// navegador le muestra los que coinciden, sin tener que scrollear una lista.
+function textoProducto(p){ return `${p.codigoInterno||''} — ${p.nombre}`.trim(); }
+function resolverProductoPorTexto(texto){
+  if(!texto) return null;
+  const limpio = texto.trim().toLowerCase();
+  let p = state.productos.find(x => textoProducto(x).toLowerCase() === limpio);
+  if(p) return p;
+  p = state.productos.find(x => x.nombre.trim().toLowerCase() === limpio);
+  return p || null;
+}
+function datalistProductosHTML(id, productos){
+  return `<datalist id="${id}">${productos.map(p=>`<option value="${escapeHtml(textoProducto(p))}">`).join('')}</datalist>`;
+}
+
+
 function ultimoCostoCompra(prodId){
   const compras = state.movimientos
     .filter(m=>m.tipo==='compra' && m.productoId===prodId && m.precioUnitario>0)
@@ -684,6 +701,17 @@ function generarCodigoInterno(){
   }
   const siguiente = maxNum + 1;
   return 'VP' + String(siguiente).padStart(4,'0');
+}
+// Para cuando se están por crear varios productos nuevos en el mismo lote (compra por planilla):
+// calcula qué código VP le va a tocar a la fila "nuevo" que está en la posición `indiceEnLote`
+// (0 = la primera fila nueva del lote, 1 = la segunda, etc.), sin todavía haberlos creado.
+function previsualizarCodigoInterno(indiceEnLote){
+  let maxNum = 0;
+  for(const p of state.productos){
+    const m = /^VP(\d+)$/i.exec(p.codigoInterno||'');
+    if(m) maxNum = Math.max(maxNum, parseInt(m[1],10));
+  }
+  return 'VP' + String(maxNum + 1 + indiceEnLote).padStart(4,'0');
 }
 
 function stockPropio(prodId){
@@ -1872,8 +1900,10 @@ const TIPO_INFO = {
   consumo_insumo:         {label:'Consumo de insumo',         badge:'badge-gray', ic:'🎨'},
 };
 
+let movTipoFiltro = 'todos';
 async function renderMovimientos(main){
-  const ultimos = [...state.movimientos].sort((a,b)=> (b.fecha+b.id).localeCompare(a.fecha+a.id)).slice(0,60);
+  const filtrados = movTipoFiltro==='todos' ? state.movimientos : state.movimientos.filter(m=>m.tipo===movTipoFiltro);
+  const ultimos = [...filtrados].sort((a,b)=> (b.fecha+b.id).localeCompare(a.fecha+a.id)).slice(0,60);
 
   main.innerHTML = `
     <div class="topbar">
@@ -1890,13 +1920,21 @@ async function renderMovimientos(main){
     </div>
     <div class="grad-bar"></div>
 
+    <div class="filter-bar">
+      <select id="filtroTipoMov">
+        <option value="todos" ${movTipoFiltro==='todos'?'selected':''}>Todos los tipos</option>
+        ${Object.keys(TIPO_INFO).map(tipo=>`<option value="${tipo}" ${movTipoFiltro===tipo?'selected':''}>${TIPO_INFO[tipo].ic} ${TIPO_INFO[tipo].label}</option>`).join('')}
+      </select>
+      <span style="font-size:12.5px;color:var(--ink-soft);">${filtrados.length} movimiento${filtrados.length===1?'':'s'}${ultimos.length<filtrados.length ? ` (mostrando los últimos ${ultimos.length})` : ''}</span>
+    </div>
+
     <div class="table-wrap">
       <table>
         <thead><tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Cant.</th><th>Total</th><th>Detalle</th><th></th></tr></thead>
         <tbody id="movBody"></tbody>
       </table>
     </div>
-    ${!ultimos.length ? '<div class="empty">Todavía no registraste movimientos. Empezá con el botón de arriba.</div>' : ''}
+    ${!ultimos.length ? `<div class="empty">${movTipoFiltro==='todos' ? 'Todavía no registraste movimientos. Empezá con el botón de arriba.' : 'No hay movimientos de este tipo.'}</div>` : ''}
   `;
 
   const tbody = document.getElementById('movBody');
@@ -1918,6 +1956,7 @@ async function renderMovimientos(main){
     tbody.appendChild(tr);
   });
 
+  document.getElementById('filtroTipoMov').addEventListener('change', (e)=>{ movTipoFiltro = e.target.value; renderMovimientos(main); });
   document.getElementById('btnNuevoMov').addEventListener('click', ()=>openMovimientoModal(main));
   document.getElementById('btnCompraMov').addEventListener('click', ()=>openMovimientoModal(main, {tipoPreset:'compra'}));
   document.getElementById('btnCompraMasivaMov').addEventListener('click', ()=>openCompraMasivaModal(main));
@@ -2001,7 +2040,7 @@ function openEditarMovimientoModal(movId, onDone){
 function openMovimientoModal(main, opts={}){
   const wrap = document.createElement('div');
   wrap.className = 'overlay';
-  const opciones = state.productos.map(p=>`<option value="${p.id}" ${p.id===opts.productoIdPreset?'selected':''}>${escapeHtml(p.codigoInterno||'')} — ${escapeHtml(p.nombre)}</option>`).join('');
+  const productoPreset = opts.productoIdPreset ? findProd(opts.productoIdPreset) : state.productos[0];
   wrap.innerHTML = `
     <div class="modal">
       <h3>${opts.tipoPreset==='compra' ? 'Registrar compra' : 'Registrar movimiento'}</h3>
@@ -2018,7 +2057,11 @@ function openMovimientoModal(main, opts={}){
           <option value="compra">⬆️ Ingreso de stock (compra a proveedor)</option>
         </select>
       </div>
-      <div class="field"><label id="lblProducto">Producto</label><select id="fProducto">${opciones}</select></div>
+      <div class="field">
+        <label id="lblProducto">Producto</label>
+        <input id="fProducto" list="datalistFProducto" autocomplete="off" placeholder="Escribí para buscar (ej: Taza)…" value="${productoPreset ? escapeHtml(textoProducto(productoPreset)) : ''}">
+        ${datalistProductosHTML('datalistFProducto', state.productos)}
+      </div>
       <div class="field" id="proveedorField" style="display:none;"><label>Proveedor (opcional)</label><input id="fProveedor" placeholder="Ej: El Mundo del Sublimado"></div>
       <div class="breakdown-box" id="stockDisponibleBox" style="display:none;"></div>
       <div class="field" id="sobrenombreField" style="display:none;">
@@ -2047,7 +2090,7 @@ function openMovimientoModal(main, opts={}){
   document.body.appendChild(wrap);
 
   function precioSugerido(){
-    const p = findProd(wrap.querySelector('#fProducto').value);
+    const p = resolverProductoPorTexto(wrap.querySelector('#fProducto').value);
     const tipo = wrap.querySelector('#fTipo').value;
     if(tipo==='revision_adicional') return state.config.cargoRevisionAdicional;
     if(!p) return 0;
@@ -2077,7 +2120,7 @@ function openMovimientoModal(main, opts={}){
 
     const boxStock = wrap.querySelector('#stockDisponibleBox');
     if(tipo==='envio_consignacion'){
-      const p = findProd(wrap.querySelector('#fProducto').value);
+      const p = resolverProductoPorTexto(wrap.querySelector('#fProducto').value);
       const cantidad = Number(wrap.querySelector('#fCantidad').value)||0;
       if(p){
         const disp = stockPropio(p.id);
@@ -2098,7 +2141,7 @@ function openMovimientoModal(main, opts={}){
       const lblSob = wrap.querySelector('#lblSobrenombre');
       const inputSob = wrap.querySelector('#fSobrenombre');
       const nota = wrap.querySelector('#sobrenombreNote');
-      const prodId = wrap.querySelector('#fProducto').value;
+      const prodId = resolverProductoPorTexto(wrap.querySelector('#fProducto').value)?.id || '';
       const datalist = wrap.querySelector('#sobrenombresList');
       if(tipo==='envio_consignacion'){
         lblSob.textContent = 'Sobrenombre / diseño (opcional)';
@@ -2121,6 +2164,7 @@ function openMovimientoModal(main, opts={}){
   }
   wrap.querySelector('#fTipo').addEventListener('change', actualizarSugerido);
   wrap.querySelector('#fProducto').addEventListener('change', actualizarSugerido);
+  wrap.querySelector('#fProducto').addEventListener('input', actualizarSugerido);
   wrap.querySelector('#fCantidad').addEventListener('input', actualizarSugerido);
   if(opts.tipoPreset) wrap.querySelector('#fTipo').value = opts.tipoPreset;
   actualizarSugerido();
@@ -2130,10 +2174,11 @@ function openMovimientoModal(main, opts={}){
 
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const tipo = wrap.querySelector('#fTipo').value;
-    const prodId = wrap.querySelector('#fProducto').value;
+    const prodId = resolverProductoPorTexto(wrap.querySelector('#fProducto').value)?.id;
     const p = findProd(prodId);
     const cantidad = Number(wrap.querySelector('#fCantidad').value)||0;
-    if(!p || cantidad<=0){ toast('Revisá producto y cantidad'); return; }
+    if(!p){ toast('Elegí un producto de la lista (tocá una de las opciones sugeridas al escribir)'); return; }
+    if(cantidad<=0){ toast('Ingresá una cantidad válida'); return; }
     const precioUnit = Number(wrap.querySelector('#fPrecio').value)||0;
     const total = (tipo==='envio_consignacion'||tipo==='devolucion_consignacion') ? 0 : precioUnit*cantidad;
     const actualizarCosto = tipo==='compra' && wrap.querySelector('#fActualizarCosto').checked;
@@ -2142,16 +2187,19 @@ function openMovimientoModal(main, opts={}){
 
     if(!wrap._registrado){
       if((tipo==='venta'||tipo==='envio_consignacion'||tipo==='merma') && stockPropio(prodId) < cantidad){
-        if(!confirm(`El stock propio de "${p.nombre}" quedaría en negativo (${stockPropio(prodId)-cantidad}). ¿Continuar igual?`)) return;
+        toast(`⛔ No alcanza el stock de "${p.nombre}" (disponible: ${stockPropio(prodId)}). Registrá primero el ingreso que falta.`);
+        return;
       }
       if((tipo==='liquidacion_consignacion'||tipo==='devolucion_consignacion') && sobrenombre){
         const alias = stockEnConsignacionDetallado().find(x=>x.productoId===prodId && x.sobrenombre===sobrenombre);
         const dispAlias = alias ? alias.cantidad : 0;
         if(dispAlias < cantidad){
-          if(!confirm(`Para el diseño "${sobrenombre}" figuran ${dispAlias} unidades enviadas a Plastipel. ¿Continuar igual?`)) return;
+          toast(`⛔ Para el diseño "${sobrenombre}" solo figuran ${dispAlias} unidades enviadas a Plastipel.`);
+          return;
         }
       }else if(tipo==='liquidacion_consignacion' && stockEnConsignacion(prodId) < cantidad){
-        if(!confirm(`Estás liquidando más unidades de las que figuran enviadas a Plastipel (disponible: ${stockEnConsignacion(prodId)}). ¿Continuar igual?`)) return;
+        toast(`⛔ Solo figuran ${stockEnConsignacion(prodId)} unidades enviadas a Plastipel de este producto.`);
+        return;
       }
       let proveedor = '';
       let detalleFinal = wrap.querySelector('#fDetalle').value.trim();
@@ -2396,7 +2444,11 @@ function openEnvioMasivoModal(main){
     if(!aEnviar.length){ toast('Tildá al menos un producto con cantidad'); return; }
 
     const excedidos = aEnviar.filter(([id,v]) => v.cantidad > stockPropio(id));
-    if(excedidos.length && !confirm(`${excedidos.length} producto(s) tienen una cantidad mayor al stock disponible. ¿Continuar igual?`)) return;
+    if(excedidos.length){
+      const nombres = excedidos.map(([id])=>findProd(id)?.nombre || id).join(', ');
+      toast(`⛔ Estos productos no tienen stock suficiente: ${nombres}. Corregí la cantidad antes de enviar.`);
+      return;
+    }
 
     if(!wrap._registrado){
       const fecha = wrap.querySelector('#fFechaEnvioMasivo').value || hoyISO();
@@ -2442,6 +2494,7 @@ function openCompraMasivaModal(main){
       </div>
       <div style="height:1px;background:var(--border);margin:14px 0;"></div>
       <div id="filasCompra"></div>
+      ${datalistProductosHTML('datalistCompraMasiva', state.productos)}
       <button type="button" class="btn btn-outline btn-sm" id="btnAgregarFila" style="margin-top:4px;">+ Agregar producto</button>
       <div class="breakdown-box" id="totalCompraBox" style="margin-top:14px;"></div>
       <div class="modal-actions">
@@ -2456,6 +2509,9 @@ function openCompraMasivaModal(main){
 
   function filaHTML(f, i){
     const opcionesProductos = state.productos.map(p=>`<option value="${p.id}" ${f.productoId===p.id?'selected':''}>${escapeHtml(p.codigoInterno||'')} — ${escapeHtml(p.nombre)}</option>`).join('');
+    const productoActual = f.productoId ? findProd(f.productoId) : null;
+    const indiceEnLote = filas.slice(0, i).filter(x=>x.tipo==='nuevo').length;
+    const codigoPrevisto = previsualizarCodigoInterno(indiceEnLote);
     return `
     <div class="field-row" data-fila="${i}" style="align-items:flex-end;margin-bottom:8px;background:var(--card-hover);padding:10px;border-radius:8px;">
       <div style="flex:2;min-width:0;">
@@ -2464,8 +2520,9 @@ function openCompraMasivaModal(main){
           <option value="nuevo" ${f.tipo==='nuevo'?'selected':''}>+ Producto nuevo</option>
         </select>
         ${f.tipo==='existente'
-          ? `<select class="fila-producto" style="width:100%;">${opcionesProductos}</select>`
-          : `<input class="fila-nombre-nuevo" placeholder="Nombre del producto nuevo" value="${escapeHtml(f.nombreNuevo||'')}" style="width:100%;margin-bottom:6px;">
+          ? `<input class="fila-producto" list="datalistCompraMasiva" autocomplete="off" placeholder="Escribí para buscar (ej: Taza)…" value="${productoActual ? escapeHtml(textoProducto(productoActual)) : ''}" style="width:100%;">`
+          : `<div class="field-note" style="margin:0 0 4px;">Va a quedar como <b class="mono" style="color:var(--ink);">${codigoPrevisto}</b></div>
+             <input class="fila-nombre-nuevo" placeholder="Nombre del producto nuevo" value="${escapeHtml(f.nombreNuevo||'')}" style="width:100%;margin-bottom:6px;">
              <select class="fila-categoria-nueva" style="width:100%;">
                <option value="materia_prima" ${f.categoriaNueva==='materia_prima'?'selected':''}>🧱 Materia prima</option>
                <option value="insumo" ${f.categoriaNueva==='insumo'?'selected':''}>🎨 Insumo</option>
@@ -2496,7 +2553,7 @@ function openCompraMasivaModal(main){
       const catEl = el.querySelector('.fila-categoria-nueva');
       return {
         tipo,
-        productoId: prodEl ? prodEl.value : (anterior.productoId || ''),
+        productoId: prodEl ? (resolverProductoPorTexto(prodEl.value)?.id || '') : (anterior.productoId || ''),
         nombreNuevo: nombreEl ? nombreEl.value : (anterior.nombreNuevo || ''),
         categoriaNueva: catEl ? catEl.value : (anterior.categoriaNueva || 'materia_prima'),
         cantidad, costo,
@@ -2961,6 +3018,7 @@ function openSublimarModal(main){
       </div>
 
       <div id="bloqueNuevoTerminado" style="display:none;">
+        <p class="view-sub" style="margin:0 0 10px;">Va a quedar como <b class="mono" style="color:var(--ink);">${generarCodigoInterno()}</b></p>
         <div class="field"><label>Nombre del producto terminado nuevo</label><input id="fNombreNuevoTerminado" placeholder="Ej: Taza con diseño de flores"></div>
         <div class="field-row">
           <div class="field"><label>Precio de venta</label><input id="fPrecioNuevoTerminado" type="number" placeholder="0"></div>
@@ -3100,7 +3158,10 @@ function openSublimarModal(main){
     if(!p){ toast('Elegí un producto terminado'); return; }
     const receta = recetaDe(p.id);
 
-    if(hayFaltante && !confirm('No hay stock suficiente de materia prima o algún insumo. ¿Continuar igual? El stock puede quedar en negativo.')) return;
+    if(hayFaltante){
+      toast('⛔ No hay stock suficiente de materia prima o algún insumo para esta cantidad. Registrá primero la compra que falta.');
+      return;
+    }
 
     if(!wrap._registrado){
       const fecha = wrap.querySelector('#fFecha').value || hoyISO();
@@ -3184,10 +3245,12 @@ function openLiquidacionModal(main){
         const alias = stockEnConsignacionDetallado().find(x=>x.productoId===prodId && x.sobrenombre===sobrenombre);
         const dispAlias = alias ? alias.cantidad : 0;
         if(dispAlias < cantidad){
-          if(!confirm(`Para el diseño "${sobrenombre}" figuran ${dispAlias} unidades enviadas. ¿Continuar igual?`)) return;
+          toast(`⛔ Para el diseño "${sobrenombre}" solo figuran ${dispAlias} unidades enviadas.`);
+          return;
         }
       }else if(stockEnConsignacion(prodId) < cantidad){
-        if(!confirm(`Estás liquidando más unidades de las enviadas (disponible: ${stockEnConsignacion(prodId)}). ¿Continuar?`)) return;
+        toast(`⛔ Solo figuran ${stockEnConsignacion(prodId)} unidades enviadas de este producto.`);
+        return;
       }
       const nuevoMov = {
         id: uid('m'), tipo:'liquidacion_consignacion', productoId: prodId, productoNombre: p.nombre,
