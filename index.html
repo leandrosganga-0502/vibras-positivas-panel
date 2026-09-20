@@ -351,6 +351,17 @@ function mesActualISO(){
 function hoyISO(){
   return new Date().toISOString().slice(0,10);
 }
+// Convierte cualquier fecha que venga del backend (a veces "2026-08-30", a veces
+// "2026-08-30T03:00:00.000Z" porque Google Sheets la guarda como fecha/hora completa)
+// a un formato legible DD/MM/AAAA para mostrar en el panel.
+function formatearFecha(fechaStr){
+  if(!fechaStr) return '—';
+  const soloFecha = String(fechaStr).slice(0,10); // "AAAA-MM-DD" de cualquiera de los dos formatos
+  const partes = soloFecha.split('-');
+  if(partes.length!==3) return String(fechaStr);
+  const [anio, mes, dia] = partes;
+  return `${dia}/${mes}/${anio}`;
+}
 function uid(prefix){
   return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 }
@@ -1942,7 +1953,7 @@ async function renderMovimientos(main){
     const info = TIPO_INFO[m.tipo] || {label:m.tipo, badge:'badge-gray', ic:''};
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="mono" style="white-space:nowrap;">${m.fecha}</td>
+      <td class="mono" style="white-space:nowrap;">${formatearFecha(m.fecha)}</td>
       <td><span class="badge ${info.badge}">${info.ic} ${info.label}</span></td>
       <td>${escapeHtml(m.productoNombre)}${m.sobrenombre?` <span class="badge badge-teal">${escapeHtml(m.sobrenombre)}</span>`:''}</td>
       <td class="mono">${m.cantidad}</td>
@@ -2122,7 +2133,7 @@ function openMovimientoModal(main, opts={}){
     if(tipo==='compra'){
       const p = resolverProductoPorTexto(wrap.querySelector('#fProducto').value);
       const ultima = p ? ultimoCostoCompra(p.id) : null;
-      notaUltimo.textContent = ultima ? `Precargado con el último costo de compra (${ultima.fecha}). Ajustalo si cambió.` : '';
+      notaUltimo.textContent = ultima ? `Precargado con el último costo de compra (${formatearFecha(ultima.fecha)}). Ajustalo si cambió.` : '';
     }else{
       notaUltimo.textContent = '';
     }
@@ -2320,7 +2331,7 @@ async function renderConsignacion(main){
         <thead><tr><th>Fecha</th><th>Producto</th><th>Diseño</th><th>Cant.</th><th>Total</th></tr></thead>
         <tbody>
           ${liquidacionesPeriodo.length ? liquidacionesPeriodo.map(m=>`
-            <tr><td class="mono">${m.fecha}</td><td>${escapeHtml(m.productoNombre)}</td><td>${m.sobrenombre?escapeHtml(m.sobrenombre):'—'}</td><td class="mono">${m.cantidad}</td><td class="mono">${money(m.total)}</td></tr>
+            <tr><td class="mono">${formatearFecha(m.fecha)}</td><td>${escapeHtml(m.productoNombre)}</td><td>${m.sobrenombre?escapeHtml(m.sobrenombre):'—'}</td><td class="mono">${m.cantidad}</td><td class="mono">${money(m.total)}</td></tr>
           `).join('') : `<tr><td colspan="5" class="empty">Sin liquidaciones en este mes.</td></tr>`}
         </tbody>
       </table>
@@ -2550,7 +2561,7 @@ function openCompraMasivaModal(main){
       <div style="width:110px;flex-shrink:0;">
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:4px;">Costo unit.</label>
         <input class="fila-costo" type="number" value="${f.costo}" style="width:100%;">
-        ${ultima ? `<div class="field-note" style="margin:3px 0 0;white-space:nowrap;">Último: ${money(ultima.costo)}<br>${ultima.fecha}</div>` : ''}
+        ${ultima ? `<div class="field-note" style="margin:3px 0 0;white-space:nowrap;">Último: ${money(ultima.costo)}<br>${formatearFecha(ultima.fecha)}</div>` : ''}
       </div>
       <button type="button" class="btn-icon fila-quitar" title="Quitar" style="flex-shrink:0;">✕</button>
     </div>`;
@@ -2895,7 +2906,7 @@ function openActualizarCostosModal(main){
             <div class="prod-code mono">${escapeHtml(p.codigoInterno||'—')} ${categoriaBadge(p.categoria)}</div>
           </td>
           <td class="mono">${money(p.costo)}</td>
-          <td>${ultima ? `<button type="button" class="link-btn fila-usar-ultimo" ${usaReceta?'disabled':''}>${money(ultima.costo)}<br><span style="font-size:10px;color:var(--ink-faint);">${ultima.fecha}</span></button>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
+          <td>${ultima ? `<button type="button" class="link-btn fila-usar-ultimo" ${usaReceta?'disabled':''}>${money(ultima.costo)}<br><span style="font-size:10px;color:var(--ink-faint);">${formatearFecha(ultima.fecha)}</span></button>` : '<span style="color:var(--ink-faint);">—</span>'}</td>
           <td>${usaReceta
             ? '<span class="field-note" style="margin:0;">usa receta ↴</span>'
             : `<input type="number" class="fila-nuevo-costo mono" value="${v.nuevoCosto}" style="width:100px;" placeholder="${p.costo}">`}</td>
@@ -3382,7 +3393,7 @@ function renderReporteMermas(body){
         <tbody>
           ${m.registros.length ? m.registros.map(r=>{
             const p = findProd(r.productoId);
-            return `<tr><td class="mono">${r.fecha}</td><td>${escapeHtml(r.productoNombre)}</td><td class="mono">${r.cantidad}</td><td class="mono">${money((p?p.costo:0)*r.cantidad)}</td><td>${escapeHtml(r.detalle||'—')}</td></tr>`;
+            return `<tr><td class="mono">${formatearFecha(r.fecha)}</td><td>${escapeHtml(r.productoNombre)}</td><td class="mono">${r.cantidad}</td><td class="mono">${money((p?p.costo:0)*r.cantidad)}</td><td>${escapeHtml(r.detalle||'—')}</td></tr>`;
           }).join('') : `<tr><td colspan="5" class="empty">Sin mermas registradas este mes.</td></tr>`}
         </tbody>
       </table>
