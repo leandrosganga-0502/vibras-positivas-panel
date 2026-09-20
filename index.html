@@ -1147,7 +1147,7 @@ function openConfigModal(){
   `;
   document.body.appendChild(wrap);
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   wrap.querySelector('#fBackendUrl').addEventListener('input', (e)=>{
     wrap.querySelector('#syncRow').style.display = e.target.value.trim() ? 'block' : 'none';
@@ -1508,7 +1508,7 @@ function openCambiarCategoriaModal(prodId, onDone){
   `;
   document.body.appendChild(wrap);
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const btn = wrap.querySelector('#saveBtn');
     const nuevaCategoria = wrap.querySelector('#fNuevaCategoria').value;
@@ -1691,7 +1691,7 @@ function openCosteoModal(prodId, onDone){
   recalcular();
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const btn = wrap.querySelector('#saveBtn');
     const vals = recalcular();
@@ -1739,7 +1739,7 @@ function openCostoSimpleModal(p, onDone){
   `;
   document.body.appendChild(wrap);
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const btn = wrap.querySelector('#saveBtn');
     const nuevo = Number(wrap.querySelector('#fCosto').value)||0;
@@ -1827,7 +1827,7 @@ function openProductoModal(){
   `;
   document.body.appendChild(wrap);
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   function actualizarCamposCategoria(){
     const cat = wrap.querySelector('#fCategoria').value;
@@ -2007,7 +2007,7 @@ function openEditarMovimientoModal(movId, onDone){
   `;
   document.body.appendChild(wrap);
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const cantidad = Number(wrap.querySelector('#fEditCantidad').value)||0;
     if(cantidad<=0){ toast('Ingresá una cantidad válida'); return; }
@@ -2040,7 +2040,7 @@ function openEditarMovimientoModal(movId, onDone){
 function openMovimientoModal(main, opts={}){
   const wrap = document.createElement('div');
   wrap.className = 'overlay';
-  const productoPreset = opts.productoIdPreset ? findProd(opts.productoIdPreset) : state.productos[0];
+  const productoPreset = opts.productoIdPreset ? findProd(opts.productoIdPreset) : null;
   wrap.innerHTML = `
     <div class="modal">
       <h3>${opts.tipoPreset==='compra' ? 'Registrar compra' : 'Registrar movimiento'}</h3>
@@ -2170,7 +2170,7 @@ function openMovimientoModal(main, opts={}){
   actualizarSugerido();
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const tipo = wrap.querySelector('#fTipo').value;
@@ -2346,7 +2346,7 @@ function openEnvioMasivoModal(main){
     `;
     document.body.appendChild(wrap);
     wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-    wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+    // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
     return;
   }
 
@@ -2437,7 +2437,7 @@ function openEnvioMasivoModal(main){
   });
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const aEnviar = Object.entries(valores).filter(([id,v])=> v.checked && v.cantidad>0);
@@ -2505,7 +2505,7 @@ function openCompraMasivaModal(main){
   `;
   document.body.appendChild(wrap);
 
-  let filas = [{tipo:'existente', productoId: state.productos[0]?state.productos[0].id:'', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0}];
+  let filas = [{tipo:'existente', productoId: '', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0}];
 
   function filaHTML(f, i){
     const opcionesProductos = state.productos.map(p=>`<option value="${p.id}" ${f.productoId===p.id?'selected':''}>${escapeHtml(p.codigoInterno||'')} — ${escapeHtml(p.nombre)}</option>`).join('');
@@ -2569,7 +2569,7 @@ function openCompraMasivaModal(main){
         leerFilasDelDOM();
         const idx = Number(b.closest('[data-fila]').dataset.fila);
         filas.splice(idx,1);
-        if(!filas.length) filas.push({tipo:'existente', productoId: state.productos[0]?state.productos[0].id:'', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0});
+        if(!filas.length) filas.push({tipo:'existente', productoId: '', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0});
         pintarFilas();
       });
     });
@@ -2594,12 +2594,12 @@ function openCompraMasivaModal(main){
   pintarFilas();
   wrap.querySelector('#btnAgregarFila').addEventListener('click', ()=>{
     leerFilasDelDOM();
-    filas.push({tipo:'existente', productoId: state.productos[0]?state.productos[0].id:'', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0});
+    filas.push({tipo:'existente', productoId: '', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0});
     pintarFilas();
   });
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     leerFilasDelDOM();
@@ -2780,7 +2780,7 @@ function openReclasificarModal(main){
   });
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     if(!seleccionados.size){ toast('Tildá al menos un producto'); return; }
@@ -2930,7 +2930,7 @@ function openActualizarCostosModal(main){
   });
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
 
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const aAplicar = Object.entries(valores).filter(([id,v])=> v.checked && v.nuevoCosto!=='' && !isNaN(Number(v.nuevoCosto)));
@@ -2981,7 +2981,7 @@ function openSublimarModal(main){
     `;
     document.body.appendChild(wrap);
     wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-    wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+    // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
     return;
   }
   if(!materiasPrimas.length){
@@ -2995,7 +2995,7 @@ function openSublimarModal(main){
     `;
     document.body.appendChild(wrap);
     wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-    wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+    // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
     return;
   }
 
@@ -3117,7 +3117,7 @@ function openSublimarModal(main){
   pintarConsumo();
 
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const {mp, cantidad, hayFaltante, esNuevo} = pintarConsumo();
     if(cantidad<=0){ toast('Ingresá una cantidad válida'); return; }
@@ -3232,7 +3232,7 @@ function openLiquidacionModal(main){
   wrap.querySelector('#fProducto').addEventListener('change', actualizarPrecio);
   actualizarPrecio();
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
-  wrap.addEventListener('click',(e)=>{ if(e.target===wrap) wrap.remove(); });
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
     const prodId = wrap.querySelector('#fProducto').value;
     const p = findProd(prodId);
