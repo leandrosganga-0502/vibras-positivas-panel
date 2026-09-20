@@ -2074,7 +2074,7 @@ function openMovimientoModal(main, opts={}){
         <div class="field"><label id="lblCantidad">Cantidad</label><input id="fCantidad" type="number" min="1" value="1"></div>
         <div class="field"><label>Fecha</label><input id="fFecha" type="date" value="${hoyISO()}"></div>
       </div>
-      <div class="field"><label id="lblPrecio">Precio unitario</label><input id="fPrecio" type="number"></div>
+      <div class="field"><label id="lblPrecio">Precio unitario</label><input id="fPrecio" type="number"><div class="field-note" id="notaUltimoCosto"></div></div>
       <div class="field" id="actualizarCostoField" style="display:none;align-items:center;gap:8px;">
         <input type="checkbox" id="fActualizarCosto" checked style="width:auto;">
         <label for="fActualizarCosto" style="margin:0;">Actualizar el costo de materia prima del producto con este valor</label>
@@ -2095,7 +2095,10 @@ function openMovimientoModal(main, opts={}){
     if(tipo==='revision_adicional') return state.config.cargoRevisionAdicional;
     if(!p) return 0;
     if(tipo==='venta'||tipo==='liquidacion_consignacion') return p.precioConsignacion && tipo==='liquidacion_consignacion' ? p.precioConsignacion : p.precioVenta;
-    if(tipo==='compra') return p.costoMateriales || p.costo;
+    if(tipo==='compra'){
+      const ultima = ultimoCostoCompra(p.id);
+      return ultima ? ultima.costo : (p.costoMateriales || p.costo);
+    }
     return 0;
   }
   function actualizarSugerido(){
@@ -2114,6 +2117,15 @@ function openMovimientoModal(main, opts={}){
     wrap.querySelector('#proveedorField').style.display = (tipo==='compra') ? '' : 'none';
     wrap.querySelector('#actualizarCostoField').style.display = (tipo==='compra') ? 'flex' : 'none';
     wrap.querySelector('#fPrecio').closest('.field').style.display = (tipo==='envio_consignacion'||tipo==='devolucion_consignacion') ? 'none' : '';
+
+    const notaUltimo = wrap.querySelector('#notaUltimoCosto');
+    if(tipo==='compra'){
+      const p = resolverProductoPorTexto(wrap.querySelector('#fProducto').value);
+      const ultima = p ? ultimoCostoCompra(p.id) : null;
+      notaUltimo.textContent = ultima ? `Precargado con el último costo de compra (${ultima.fecha}). Ajustalo si cambió.` : '';
+    }else{
+      notaUltimo.textContent = '';
+    }
 
     const esConsignacion = ['envio_consignacion','liquidacion_consignacion','devolucion_consignacion'].includes(tipo);
     wrap.querySelector('#sobrenombreField').style.display = esConsignacion ? '' : 'none';
@@ -2510,6 +2522,7 @@ function openCompraMasivaModal(main){
   function filaHTML(f, i){
     const opcionesProductos = state.productos.map(p=>`<option value="${p.id}" ${f.productoId===p.id?'selected':''}>${escapeHtml(p.codigoInterno||'')} — ${escapeHtml(p.nombre)}</option>`).join('');
     const productoActual = f.productoId ? findProd(f.productoId) : null;
+    const ultima = productoActual ? ultimoCostoCompra(productoActual.id) : null;
     const indiceEnLote = filas.slice(0, i).filter(x=>x.tipo==='nuevo').length;
     const codigoPrevisto = previsualizarCodigoInterno(indiceEnLote);
     return `
@@ -2534,9 +2547,10 @@ function openCompraMasivaModal(main){
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:4px;">Cantidad</label>
         <input class="fila-cantidad" type="number" value="${f.cantidad}" style="width:100%;">
       </div>
-      <div style="width:100px;flex-shrink:0;">
+      <div style="width:110px;flex-shrink:0;">
         <label style="font-size:11px;color:var(--ink-soft);display:block;margin-bottom:4px;">Costo unit.</label>
         <input class="fila-costo" type="number" value="${f.costo}" style="width:100%;">
+        ${ultima ? `<div class="field-note" style="margin:3px 0 0;white-space:nowrap;">Último: ${money(ultima.costo)}<br>${ultima.fecha}</div>` : ''}
       </div>
       <button type="button" class="btn-icon fila-quitar" title="Quitar" style="flex-shrink:0;">✕</button>
     </div>`;
@@ -2578,6 +2592,18 @@ function openCompraMasivaModal(main){
     });
     cont.querySelectorAll('input, select').forEach(el=>{
       el.addEventListener('input', actualizarTotal);
+    });
+    cont.querySelectorAll('.fila-producto').forEach(inp=>{
+      inp.addEventListener('change', ()=>{
+        const p = resolverProductoPorTexto(inp.value);
+        if(p){
+          leerFilasDelDOM();
+          const idx = Number(inp.closest('[data-fila]').dataset.fila);
+          const ultima = ultimoCostoCompra(p.id);
+          if(ultima) filas[idx].costo = ultima.costo;
+          pintarFilas();
+        }
+      });
     });
     actualizarTotal();
   }
