@@ -862,9 +862,15 @@ function costoInsumosPorUnidad(productoTerminadoId){
 }
 
 /* Costeo por absorción: materia prima + mano de obra (diseño) + proceso de venta (tinta, luz, insumos) + gastos indirectos.
-   Si el producto tiene una receta detallada (materiaPrimaId + insumos), el costo de materia prima e insumos
-   se deriva automáticamente de esa receta en vez de pedirlo a mano. */
+   Solo aplica a productos TERMINADOS. Una materia prima o un insumo no tienen "absorción":
+   su costo es directamente lo que se pagó al comprarlos, sin ningún % agregado.
+   Si el producto terminado tiene una receta detallada (materiaPrimaId + insumos), el costo de
+   materia prima e insumos se deriva automáticamente de esa receta en vez de pedirlo a mano. */
 function costeoAbsorcion(p){
+  if(p.categoria==='materia_prima' || p.categoria==='insumo'){
+    const materiales = p.costoMateriales || p.costo || 0;
+    return {materiales, manoObra:0, proceso:0, directo:materiales, indirecto:0, total:materiales, tarifa:0, pctProceso:0, pctInd:0, usaReceta:false};
+  }
   const tarifa = (p.tarifaHoraOverride!=null) ? p.tarifaHoraOverride : state.config.tarifaHoraDiseno;
   const pctInd = (p.gastosIndirectosPctOverride!=null) ? p.gastosIndirectosPctOverride : state.config.gastosIndirectosPct;
   const usaReceta = p.categoria==='producto_terminado' && !!p.materiaPrimaId;
