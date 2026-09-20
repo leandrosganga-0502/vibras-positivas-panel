@@ -362,6 +362,28 @@ function formatearFecha(fechaStr){
   const [anio, mes, dia] = partes;
   return `${dia}/${mes}/${anio}`;
 }
+// El <input type="date"> nativo muestra el formato del idioma del NAVEGADOR (no del
+// elemento), así que en un navegador en inglés siempre sale mes/día/año sin importar
+// qué le pongamos. Para forzar día/mes/año armamos un campo de texto de solo lectura
+// que muestra la fecha ya formateada, superpuesto sobre el selector nativo (que queda
+// invisible pero sigue siendo el que realmente maneja el valor y abre el calendario).
+function campoFechaHTML(id, valorISO, label){
+  return `
+    <div class="field">
+      ${label ? `<label>${label}</label>` : ''}
+      <div style="position:relative;">
+        <input type="text" id="${id}_texto" readonly value="${formatearFecha(valorISO)}" style="cursor:pointer;">
+        <input type="date" id="${id}" value="${valorISO}" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
+      </div>
+    </div>`;
+}
+function initCampoFecha(wrap, id){
+  const real = wrap.querySelector('#'+id);
+  const texto = wrap.querySelector('#'+id+'_texto');
+  if(!real || !texto) return;
+  real.addEventListener('input', ()=>{ texto.value = formatearFecha(real.value); });
+  real.addEventListener('change', ()=>{ texto.value = formatearFecha(real.value); });
+}
 function uid(prefix){
   return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 }
@@ -2005,7 +2027,7 @@ function openEditarMovimientoModal(movId, onDone){
       <div class="hint-box">💡 El producto y el tipo de movimiento no se pueden cambiar acá — si te equivocaste en eso, lo más simple es eliminar este movimiento y cargarlo de nuevo. Sí podés corregir cantidad, precio, fecha y detalle.</div>
       <div class="field-row">
         <div class="field"><label>Cantidad</label><input id="fEditCantidad" type="number" min="1" value="${m.cantidad}"></div>
-        <div class="field"><label>Fecha</label><input id="fEditFecha" type="date" value="${(m.fecha||'').slice(0,10)}"></div>
+        ${campoFechaHTML('fEditFecha', (m.fecha||'').slice(0,10), 'Fecha')}
       </div>
       ${tieneImporte ? `<div class="field"><label>Precio unitario</label><input id="fEditPrecio" type="number" value="${m.precioUnitario||0}"></div>` : ''}
       ${esConsignacion ? `<div class="field"><label>Sobrenombre / diseño (opcional)</label><input id="fEditSobrenombre" value="${escapeHtml(m.sobrenombre||'')}"></div>` : ''}
@@ -2017,6 +2039,7 @@ function openEditarMovimientoModal(movId, onDone){
     </div>
   `;
   document.body.appendChild(wrap);
+  initCampoFecha(wrap, 'fEditFecha');
   wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
   // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
   wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
@@ -2083,7 +2106,7 @@ function openMovimientoModal(main, opts={}){
       </div>
       <div class="field-row">
         <div class="field"><label id="lblCantidad">Cantidad</label><input id="fCantidad" type="number" min="1" value="1"></div>
-        <div class="field"><label>Fecha</label><input id="fFecha" type="date" value="${hoyISO()}"></div>
+        ${campoFechaHTML('fFecha', hoyISO(), 'Fecha')}
       </div>
       <div class="field"><label id="lblPrecio">Precio unitario</label><input id="fPrecio" type="number"><div class="field-note" id="notaUltimoCosto"></div></div>
       <div class="field" id="actualizarCostoField" style="display:none;align-items:center;gap:8px;">
@@ -2099,6 +2122,7 @@ function openMovimientoModal(main, opts={}){
     </div>
   `;
   document.body.appendChild(wrap);
+  initCampoFecha(wrap, 'fFecha');
 
   function precioSugerido(){
     const p = resolverProductoPorTexto(wrap.querySelector('#fProducto').value);
@@ -2390,7 +2414,7 @@ function openEnvioMasivoModal(main){
         </table>
       </div>
 
-      <div class="field" style="margin-top:14px;"><label>Fecha del envío</label><input id="fFechaEnvioMasivo" type="date" value="${hoyISO()}"></div>
+      ${campoFechaHTML('fFechaEnvioMasivo', hoyISO(), 'Fecha del envío')}
 
       <div class="modal-actions">
         <button class="btn btn-outline" id="cancelBtn">Cancelar</button>
@@ -2399,6 +2423,7 @@ function openEnvioMasivoModal(main){
     </div>
   `;
   document.body.appendChild(wrap);
+  initCampoFecha(wrap, 'fFechaEnvioMasivo');
 
   let valores = {}; // productoId -> {checked, cantidad, sobrenombre}
 
@@ -2510,7 +2535,7 @@ function openCompraMasivaModal(main){
         <div class="field"><label>Proveedor (opcional)</label><input id="fProveedorMasivo" placeholder="Ej: El Mundo del Sublimado"></div>
         <div class="field"><label>N° de remito (opcional)</label><input id="fRemitoMasivo" placeholder="Ej: 12345"></div>
       </div>
-      <div class="field"><label>Fecha</label><input id="fFechaMasiva" type="date" value="${hoyISO()}"></div>
+      ${campoFechaHTML('fFechaMasiva', hoyISO(), 'Fecha')}
       <div class="field" style="display:flex;align-items:center;gap:8px;">
         <input type="checkbox" id="fActualizarCostoMasivo" checked style="width:auto;">
         <label for="fActualizarCostoMasivo" style="margin:0;">Actualizar el costo de cada producto con lo cargado acá</label>
@@ -2527,6 +2552,7 @@ function openCompraMasivaModal(main){
     </div>
   `;
   document.body.appendChild(wrap);
+  initCampoFecha(wrap, 'fFechaMasiva');
 
   let filas = [{tipo:'existente', productoId: '', nombreNuevo:'', categoriaNueva:'materia_prima', cantidad:1, costo:0}];
 
@@ -3066,7 +3092,7 @@ function openSublimarModal(main){
 
       <div class="field-row">
         <div class="field"><label>Cantidad a producir</label><input id="fCantidad" type="number" min="1" value="1"></div>
-        <div class="field"><label>Fecha</label><input id="fFecha" type="date" value="${hoyISO()}"></div>
+        ${campoFechaHTML('fFecha', hoyISO(), 'Fecha')}
       </div>
       <div class="breakdown-box" id="consumoBox"></div>
       <div class="modal-actions">
@@ -3076,6 +3102,7 @@ function openSublimarModal(main){
     </div>
   `;
   document.body.appendChild(wrap);
+  initCampoFecha(wrap, 'fFecha');
 
   function terminadosDeEstaMateriaPrima(mpId){
     return state.productos.filter(p=>p.categoria==='producto_terminado' && p.materiaPrimaId===mpId);
@@ -3246,7 +3273,7 @@ function openLiquidacionModal(main){
       </div>
       <div class="field-row">
         <div class="field"><label>Cantidad vendida</label><input id="fCantidad" type="number" min="1" value="1"></div>
-        <div class="field"><label>Fecha de liquidación</label><input id="fFecha" type="date" value="${hoyISO()}"></div>
+        ${campoFechaHTML('fFecha', hoyISO(), 'Fecha de liquidación')}
       </div>
       <div class="field"><label>Precio unitario liquidado</label><input id="fPrecio" type="number"></div>
       <div class="modal-actions">
@@ -3256,6 +3283,7 @@ function openLiquidacionModal(main){
     </div>
   `;
   document.body.appendChild(wrap);
+  initCampoFecha(wrap, 'fFecha');
   function actualizarPrecio(){
     const p = findProd(wrap.querySelector('#fProducto').value);
     wrap.querySelector('#fPrecio').value = p ? p.precioConsignacion : 0;
