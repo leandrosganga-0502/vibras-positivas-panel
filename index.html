@@ -762,6 +762,13 @@ function stockPropio(prodId){
   }
   return s;
 }
+// Para insumos: cuánto de lo que hay físicamente ya está "en uso" (abierto/asignado a producción)
+// se marca a mano con el campo p.enUso. Disponible = stock físico - en uso.
+function stockDisponibleInsumo(p){
+  const total = stockPropio(p.id);
+  const enUso = Math.min(Number(p.enUso)||0, total);
+  return Math.max(0, total - enUso);
+}
 function stockEnConsignacion(prodId){
   let s = 0;
   for(const m of state.movimientos){
@@ -1349,9 +1356,11 @@ async function renderProductos(main){
     <div class="table-wrap">
       <table>
         <thead><tr>
-          ${esVistaSimplificada(prodCategoriaFiltro)
-            ? '<th>Producto</th><th>Costo</th><th>Stock</th><th></th>'
-            : '<th>Producto</th><th>Costo (absorción)</th><th>Precio venta</th><th>Precio Plastipel</th><th>Margen</th><th>Stock</th><th></th>'}
+          ${prodCategoriaFiltro==='insumo'
+            ? '<th>Producto</th><th>Costo</th><th>En uso</th><th>Disponible</th><th></th>'
+            : esVistaSimplificada(prodCategoriaFiltro)
+              ? '<th>Producto</th><th>Costo</th><th>Stock</th><th></th>'
+              : '<th>Producto</th><th>Costo (absorción)</th><th>Precio venta</th><th>Precio Plastipel</th><th>Margen</th><th>Stock</th><th></th>'}
         </tr></thead>
         <tbody id="prodBody"></tbody>
       </table>
@@ -1402,13 +1411,15 @@ async function renderProductosBody(main){
   for(const p of lista){
     if(miGen !== prodRenderGen) return; // una búsqueda más nueva ya está en curso: abandonar esta
     const tr = document.createElement('tr');
-    const imgBlanco = await getImage(p.id, 'blanco');
-    const imgSublimado = await getImage(p.id, 'sublimado');
+    const tieneImagenes = p.categoria !== 'insumo';
+    const imgBlanco = tieneImagenes ? await getImage(p.id, 'blanco') : null;
+    const imgSublimado = tieneImagenes ? await getImage(p.id, 'sublimado') : null;
     const stock = stockPropio(p.id);
     const m = margenPct(p);
     tr.innerHTML = `
       <td>
         <div class="prod-cell">
+          ${tieneImagenes ? `
           <div style="display:flex;gap:4px;flex-shrink:0;">
             <label class="prod-thumb-empty" style="cursor:pointer;overflow:hidden;position:relative;" title="Foto sin sublimar (blanco)">
               ${imgBlanco ? `<img class="prod-thumb" src="${imgBlanco}" style="position:absolute;inset:0;">` : '🖼'}
@@ -1419,6 +1430,7 @@ async function renderProductosBody(main){
               <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;" data-img-for="${p.id}" data-img-tipo="sublimado">
             </label>
           </div>
+          ` : ''}
           <div style="min-width:0;flex:1;">
             <div class="value-view" data-field="nombre" data-id="${p.id}">
               <span class="value-text name-text">${escapeHtml(p.nombre)}</span>
@@ -1427,7 +1439,7 @@ async function renderProductosBody(main){
               ${categoriaBadge(p.categoria, p.id)}
             </div>
             <div class="prod-code mono">${escapeHtml(p.codigoInterno||'—')} · ${escapeHtml(p.codigo||'—')}</div>
-            <div class="field-note" style="margin:2px 0 0;">🖼 sin sublimar · 🔥 sublimado (ejemplo)</div>
+            ${tieneImagenes ? '<div class="field-note" style="margin:2px 0 0;">🖼 sin sublimar · 🔥 sublimado (ejemplo)</div>' : ''}
           </div>
         </div>
       </td>
@@ -1437,7 +1449,16 @@ async function renderProductosBody(main){
           <span class="costo-caret">▸ detalle</span>
         </div>
       </td>
-      ${esVistaSimplificada(prodCategoriaFiltro) ? `
+      ${prodCategoriaFiltro==='insumo' ? `
+      <td>
+        <div class="value-view" data-field="enUso" data-id="${p.id}">
+          <span class="value-text mono">${Number(p.enUso)||0}</span>
+          <button type="button" class="pencil-btn" data-edit="enUso" data-id="${p.id}" title="Editar cantidad en uso">✎</button>
+        </div>
+      </td>
+      <td><span class="mono" style="font-weight:600;">${stockDisponibleInsumo(p)}</span></td>
+      <td><button class="btn-icon" data-del="${p.id}" title="Eliminar">✕</button></td>
+      ` : esVistaSimplificada(prodCategoriaFiltro) ? `
       <td><span class="mono" style="font-weight:600;">${stock}</span></td>
       <td><button class="btn-icon" data-del="${p.id}" title="Eliminar">✕</button></td>
       ` : esCategoriaSimplificada(p.categoria) ? `
@@ -1496,10 +1517,15 @@ async function renderProductosBody(main){
           if(!nuevoNombre){ toast('El nombre no puede quedar vacío'); return; }
           p.nombre = nuevoNombre;
         }else{
-          const val = Number(input.value)||0;
+          let val = Number(input.value)||0;
           if(field==='costo' && val !== p.costo){
             p.costoAnterior = p.costo;
             p.fechaCambioCosto = hoyISO();
+          }
+          if(field==='enUso'){
+            const total = stockPropio(p.id);
+            if(val > total){ toast(`No puede haber más en uso (${val}) que stock físico (${total})`); return; }
+            if(val < 0) val = 0;
           }
           p[field] = val;
         }
