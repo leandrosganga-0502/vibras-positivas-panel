@@ -1296,6 +1296,12 @@ function escapeHtml(s){
 let prodFiltro = '';
 let prodCategoriaFiltro = 'todos';
 let prodStockFiltro = 'todos'; // 'todos' | 'con_stock' | 'sin_stock'
+function esCategoriaSimplificada(categoria){
+  return categoria==='materia_prima' || categoria==='insumo';
+}
+function esVistaSimplificada(categoriaFiltro){
+  return categoriaFiltro==='materia_prima' || categoriaFiltro==='insumo';
+}
 function categoriaBadge(categoria, prodId){
   const etiquetas = {
     materia_prima: '🧱 Materia prima',
@@ -1317,6 +1323,7 @@ async function renderProductos(main){
         <button class="btn btn-outline" id="btnCompraMasiva">📋 Compra por planilla</button>
         <button class="btn btn-teal" id="btnSublimar">🔥 Sublimar</button>
         <button class="btn btn-outline" id="btnActualizarCostos">💲 Actualizar costos</button>
+        <button class="btn btn-outline" id="btnEditarPreciosMasivo">📈 Editar precios (%)</button>
         <button class="btn btn-outline" id="btnReclasificar">🏷️ Reclasificar</button>
         <button class="btn btn-primary" id="btnNuevoProd">+ Nuevo producto</button>
       </div>
@@ -1342,7 +1349,9 @@ async function renderProductos(main){
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Producto</th><th>Costo (absorción)</th><th>Precio venta</th><th>Precio Plastipel</th><th>Margen</th><th>Stock</th><th></th>
+          ${esVistaSimplificada(prodCategoriaFiltro)
+            ? '<th>Producto</th><th>Costo</th><th>Stock</th><th></th>'
+            : '<th>Producto</th><th>Costo (absorción)</th><th>Precio venta</th><th>Precio Plastipel</th><th>Margen</th><th>Stock</th><th></th>'}
         </tr></thead>
         <tbody id="prodBody"></tbody>
       </table>
@@ -1355,6 +1364,7 @@ async function renderProductos(main){
   document.getElementById('btnCompraMasiva').addEventListener('click', ()=>openCompraMasivaModal(main));
   document.getElementById('btnSublimar').addEventListener('click', ()=>openSublimarModal(main));
   document.getElementById('btnActualizarCostos').addEventListener('click', ()=>openActualizarCostosModal(main));
+  document.getElementById('btnEditarPreciosMasivo').addEventListener('click', ()=>openEditarPreciosMasivoModal(main));
   document.getElementById('btnReclasificar').addEventListener('click', ()=>openReclasificarModal(main));
   main.querySelectorAll('[data-cat]').forEach(b=>{
     b.addEventListener('click', ()=>{ prodCategoriaFiltro = b.dataset.cat; renderProductos(main); });
@@ -1427,6 +1437,16 @@ async function renderProductosBody(main){
           <span class="costo-caret">▸ detalle</span>
         </div>
       </td>
+      ${esVistaSimplificada(prodCategoriaFiltro) ? `
+      <td><span class="mono" style="font-weight:600;">${stock}</span></td>
+      <td><button class="btn-icon" data-del="${p.id}" title="Eliminar">✕</button></td>
+      ` : esCategoriaSimplificada(p.categoria) ? `
+      <td><span class="value-text mono" style="color:var(--ink-faint);">—</span></td>
+      <td><span class="value-text mono" style="color:var(--ink-faint);">—</span></td>
+      <td><span class="value-text mono" style="color:var(--ink-faint);">—</span></td>
+      <td><span class="mono" style="font-weight:600;">${stock}</span></td>
+      <td><button class="btn-icon" data-del="${p.id}" title="Eliminar">✕</button></td>
+      ` : `
       <td>
         <div class="value-view" data-field="precioVenta" data-id="${p.id}">
           <span class="value-text mono">${money(p.precioVenta)}</span>
@@ -1442,6 +1462,7 @@ async function renderProductosBody(main){
       <td><span class="badge ${m>=40?'badge-green':m>=15?'badge-gray':'badge-red'}">${m.toFixed(0)}%</span></td>
       <td><span class="mono" style="font-weight:600;">${stock}</span></td>
       <td><button class="btn-icon" data-del="${p.id}" title="Eliminar">✕</button></td>
+      `}
     `;
     if(miGen !== prodRenderGen) return; // la búsqueda cambió mientras cargaba esta fila: descartarla
     tbody.appendChild(tr);
@@ -3029,6 +3050,171 @@ function openActualizarCostosModal(main){
     if(!ok){ btn.textContent = 'Reintentar guardado'; return; }
     wrap.remove();
     toast(`Costos actualizados: ${cambiados} producto${cambiados===1?'':'s'}`);
+    render();
+  });
+}
+
+/* =========================================================
+   EDICIÓN MASIVA DE PRECIOS (por porcentaje, con redondeo hacia arriba)
+   ========================================================= */
+let preciosMasivoFiltroTexto = '';
+let preciosMasivoRedondeo = 100; // 1 | 10 | 50 | 100 | 500 | 1000
+function redondearPrecioArriba(valor, multiplo){
+  multiplo = Number(multiplo) || 1;
+  if(!valor) return 0;
+  return Math.ceil(valor / multiplo) * multiplo;
+}
+function openEditarPreciosMasivoModal(main){
+  const wrap = document.createElement('div');
+  wrap.className = 'overlay';
+  wrap.innerHTML = `
+    <div class="modal" style="max-width:820px;">
+      <h3>📈 Edición masiva de precios</h3>
+      <p class="view-sub" style="margin:0 0 14px;">Aplicá un % a precio de venta y precio Plastipel de los productos terminados que elijas, redondeando hacia arriba a un número lindo.</p>
+
+      <div class="field-row" style="align-items:flex-end;flex-wrap:wrap;gap:10px;">
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Buscar producto</label>
+          <input type="text" id="buscarPreciosMasivo" autocomplete="off" placeholder="Buscar producto terminado…" value="${escapeHtml(preciosMasivoFiltroTexto)}">
+        </div>
+        <div class="field" style="min-width:140px;">
+          <label>% a aplicar</label>
+          <input type="number" id="fPorcentaje" value="10" step="0.5" style="width:100%;">
+        </div>
+        <div class="field" style="min-width:150px;">
+          <label>Redondear hacia arriba a</label>
+          <select id="fRedondeo">
+            <option value="1" ${preciosMasivoRedondeo===1?'selected':''}>Sin redondeo</option>
+            <option value="10" ${preciosMasivoRedondeo===10?'selected':''}>Múltiplo de 10</option>
+            <option value="50" ${preciosMasivoRedondeo===50?'selected':''}>Múltiplo de 50</option>
+            <option value="100" ${preciosMasivoRedondeo===100?'selected':''}>Múltiplo de 100</option>
+            <option value="500" ${preciosMasivoRedondeo===500?'selected':''}>Múltiplo de 500</option>
+            <option value="1000" ${preciosMasivoRedondeo===1000?'selected':''}>Múltiplo de 1000</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-outline" id="btnPrevisualizar" style="flex-shrink:0;">Previsualizar</button>
+      </div>
+
+      <div class="hint-box" style="margin-top:10px;">💡 Ejemplo: con +10% y redondeo a 100, un precio que quedaría en $1435 se ajusta a $1500. Solo se muestran productos terminados: son los únicos con precio de venta y precio Plastipel.</div>
+
+      <div style="height:1px;background:var(--border);margin:12px 0;"></div>
+
+      <div style="max-height:44vh;overflow-y:auto;border:1px solid var(--border);border-radius:10px;">
+        <table style="width:100%;">
+          <thead><tr>
+            <th style="width:30px;"><input type="checkbox" id="chkTodosPrecios"></th>
+            <th>Producto</th><th>Venta actual</th><th>Venta nuevo</th><th>Plastipel actual</th><th>Plastipel nuevo</th>
+          </tr></thead>
+          <tbody id="filasPreciosMasivo"></tbody>
+        </table>
+      </div>
+
+      <div class="field-note" style="margin-top:8px;">Se aplica solo a las filas tildadas. Los valores "nuevo" se recalculan cada vez que tocás "Previsualizar".</div>
+
+      <div class="modal-actions">
+        <button class="btn btn-outline" id="cancelBtn">Cancelar</button>
+        <button class="btn btn-primary" id="saveBtn">Aplicar cambios</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  let seleccion = {}; // productoId -> true/false
+  let previa = {}; // productoId -> {venta, plastipel}
+
+  function listaFiltrada(){
+    const term = preciosMasivoFiltroTexto.trim().toLowerCase();
+    return state.productos.filter(p =>
+      p.categoria === 'producto_terminado' &&
+      (!term || p.nombre.toLowerCase().includes(term) || (p.codigo||'').toLowerCase().includes(term))
+    );
+  }
+
+  function calcularPrevia(){
+    const pct = Number(wrap.querySelector('#fPorcentaje').value) || 0;
+    const mult = Number(wrap.querySelector('#fRedondeo').value) || 1;
+    preciosMasivoRedondeo = mult;
+    previa = {};
+    listaFiltrada().forEach(p=>{
+      const ventaBase = Number(p.precioVenta)||0;
+      const plastipelBase = Number(p.precioConsignacion)||0;
+      previa[p.id] = {
+        venta: redondearPrecioArriba(ventaBase * (1 + pct/100), mult),
+        plastipel: redondearPrecioArriba(plastipelBase * (1 + pct/100), mult),
+      };
+    });
+  }
+
+  function pintarFilas(){
+    const tbody = wrap.querySelector('#filasPreciosMasivo');
+    const lista = listaFiltrada();
+    tbody.innerHTML = lista.map(p=>{
+      const marcado = !!seleccion[p.id];
+      const pv = previa[p.id];
+      return `
+        <tr data-prod="${p.id}">
+          <td><input type="checkbox" class="fila-check" ${marcado?'checked':''}></td>
+          <td>
+            <div class="prod-name">${escapeHtml(p.nombre)}</div>
+            <div class="prod-code mono">${escapeHtml(p.codigoInterno||'—')}</div>
+          </td>
+          <td class="mono">${money(p.precioVenta)}</td>
+          <td class="mono" style="font-weight:600;color:var(--green);">${pv ? money(pv.venta) : '—'}</td>
+          <td class="mono">${money(p.precioConsignacion)}</td>
+          <td class="mono" style="font-weight:600;color:var(--green);">${pv ? money(pv.plastipel) : '—'}</td>
+        </tr>`;
+    }).join('') || `<tr><td colspan="6" class="empty">No se encontraron productos terminados.</td></tr>`;
+
+    tbody.querySelectorAll('[data-prod]').forEach(tr=>{
+      const prodId = tr.dataset.prod;
+      const chk = tr.querySelector('.fila-check');
+      chk.addEventListener('change', ()=>{ seleccion[prodId] = chk.checked; });
+    });
+  }
+
+  calcularPrevia();
+  pintarFilas();
+
+  wrap.querySelector('#buscarPreciosMasivo').addEventListener('input', (e)=>{
+    preciosMasivoFiltroTexto = e.target.value;
+    calcularPrevia();
+    pintarFilas();
+  });
+  wrap.querySelector('#btnPrevisualizar').addEventListener('click', ()=>{
+    calcularPrevia();
+    pintarFilas();
+    toast('Previsualización actualizada');
+  });
+  wrap.querySelector('#chkTodosPrecios').addEventListener('change', (e)=>{
+    listaFiltrada().forEach(p=>{ seleccion[p.id] = e.target.checked; });
+    pintarFilas();
+  });
+
+  wrap.querySelector('#cancelBtn').addEventListener('click', ()=>wrap.remove());
+  // El modal ya NO se cierra solo al tocar afuera del cuadro — así no se pierde lo cargado por error.
+
+  wrap.querySelector('#saveBtn').addEventListener('click', async ()=>{
+    calcularPrevia();
+    const aAplicar = Object.entries(seleccion).filter(([id,marcado])=> marcado && previa[id]);
+    if(!aAplicar.length){ toast('Tildá al menos un producto'); return; }
+
+    let cambiados = 0;
+    for(const [prodId] of aAplicar){
+      const p = findProd(prodId);
+      if(!p) continue;
+      const pv = previa[prodId];
+      if(!pv) continue;
+      p.precioVenta = pv.venta;
+      p.precioConsignacion = pv.plastipel;
+      cambiados++;
+    }
+    const btn = wrap.querySelector('#saveBtn');
+    btn.textContent = 'Guardando…'; btn.disabled = true;
+    const ok = await saveProductos();
+    btn.disabled = false;
+    if(!ok){ btn.textContent = 'Reintentar guardado'; return; }
+    wrap.remove();
+    toast(`Precios actualizados: ${cambiados} producto${cambiados===1?'':'s'}`);
     render();
   });
 }
