@@ -1644,8 +1644,8 @@ function openCosteoModal(prodId, onDone){
 
   const wrap = document.createElement('div');
   wrap.className = 'overlay';
-  const materiasPrimas = state.productos.filter(x=>x.categoria==='materia_prima');
-  const insumos = state.productos.filter(x=>x.categoria==='insumo');
+  const materiasPrimas = state.productos.filter(x=>x.categoria==='materia_prima').sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+  const insumos = state.productos.filter(x=>x.categoria==='insumo').sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
   const recetaActual = recetaDe(p.id);
 
   wrap.innerHTML = `
@@ -1655,11 +1655,10 @@ function openCosteoModal(prodId, onDone){
 
       <div class="field">
         <label>Materia prima vinculada</label>
-        <select id="fMateriaPrimaId">
-          <option value="">— Cargar el costo a mano (sin vincular) —</option>
-          ${materiasPrimas.map(mp=>`<option value="${mp.id}" ${p.materiaPrimaId===mp.id?'selected':''}>${escapeHtml(mp.nombre)} (${money(mp.costo)})</option>`).join('')}
-        </select>
-        <div class="field-note">Si la vinculás, el costo de materia prima se toma solo del costo de compra de ese producto (se actualiza cada vez que registrás una compra).</div>
+        <input id="fMateriaPrimaId" type="text" list="datalistMateriaPrimaId" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Escribí para buscar (ej: taza)… vacío = cargar el costo a mano" value="${p.materiaPrimaId && findProd(p.materiaPrimaId) ? escapeHtml(textoProducto(findProd(p.materiaPrimaId))) : ''}">
+        ${datalistProductosHTML('datalistMateriaPrimaId', materiasPrimas)}
+        <div class="field-note" id="notaCostoMP"></div>
+        <div class="field-note">Si la vinculás, el costo de materia prima se toma solo del costo de compra de ese producto (se actualiza cada vez que registrás una compra). Dejalo vacío para cargar el costo a mano.</div>
       </div>
       <div class="field" id="fldMaterialesManual"><label>Materia prima (superficie a sublimar)</label><input id="fMateriales" type="number" value="${p.costoMateriales||0}"></div>
 
@@ -1749,10 +1748,19 @@ function openCosteoModal(prodId, onDone){
     recalcular();
   });
 
+  // El campo "Materia prima vinculada" es un autocompletado de texto (buscá escribiendo,
+  // en vez de un <select> larguísimo); esta función resuelve el texto tipeado al id real.
+  function getMateriaPrimaId(){
+    const texto = wrap.querySelector('#fMateriaPrimaId').value;
+    if(!texto.trim()) return '';
+    const prod = resolverProductoPorTexto(texto);
+    return (prod && prod.categoria==='materia_prima') ? prod.id : '';
+  }
+
   // --- Materias primas ADICIONALES (misma mecánica que insumos, pero eligiendo entre materias primas) ---
   function pintarFilasRecetaMP(filas){
     const cont = wrap.querySelector('#recetaRowsMP');
-    const opciones = materiasPrimas.filter(mp=>mp.id !== wrap.querySelector('#fMateriaPrimaId').value);
+    const opciones = materiasPrimas.filter(mp=>mp.id !== getMateriaPrimaId());
     cont.innerHTML = filas.map((f,i)=>`
       <div class="field-row" data-filaMP="${i}" style="margin-bottom:8px;align-items:flex-end;">
         <div class="field" style="margin-bottom:0;">
@@ -1793,7 +1801,7 @@ function openCosteoModal(prodId, onDone){
   else wrap.querySelector('#recetaRowsMP').innerHTML = '<div class="field-note">Necesitás al menos otra materia prima cargada para agregarla acá.</div>';
 
   wrap.querySelector('#btnAgregarMP').addEventListener('click', ()=>{
-    const vinculada = wrap.querySelector('#fMateriaPrimaId').value;
+    const vinculada = getMateriaPrimaId();
     const disponibles = materiasPrimas.filter(mp=>mp.id !== vinculada);
     if(!disponibles.length){ toast('No hay otra materia prima cargada para agregar'); return; }
     filasRecetaMP.push({insumoId: disponibles[0].id, cantidadPorUnidad: 0});
@@ -1802,20 +1810,32 @@ function openCosteoModal(prodId, onDone){
   });
 
   function actualizarModoMateriaPrima(){
-    const vinculada = wrap.querySelector('#fMateriaPrimaId').value;
+    const vinculada = getMateriaPrimaId();
     const usaReceta = !!vinculada;
     wrap.querySelector('#fldMaterialesManual').style.display = usaReceta ? 'none' : '';
     wrap.querySelector('#fldReceta').style.display = usaReceta ? '' : 'none';
     wrap.querySelector('#fldRecetaMP').style.display = usaReceta ? '' : 'none';
     wrap.querySelector('#fldPctProceso').style.display = usaReceta ? 'none' : '';
     wrap.querySelector('#notaPctProceso').style.display = usaReceta ? 'none' : '';
+    const notaCosto = wrap.querySelector('#notaCostoMP');
+    const texto = wrap.querySelector('#fMateriaPrimaId').value.trim();
+    if(texto && !vinculada){
+      notaCosto.textContent = '⚠ No se encontró ninguna materia prima con ese nombre/código.';
+      notaCosto.style.color = 'var(--red)';
+    }else if(vinculada){
+      notaCosto.textContent = `Costo de compra actual: ${money(findProd(vinculada).costo)}`;
+      notaCosto.style.color = '';
+    }else{
+      notaCosto.textContent = '';
+    }
     if(usaReceta) pintarFilasRecetaMP(filasRecetaMP);
   }
   wrap.querySelector('#fMateriaPrimaId').addEventListener('change', ()=>{ actualizarModoMateriaPrima(); recalcular(); });
+  wrap.querySelector('#fMateriaPrimaId').addEventListener('input', ()=>{ actualizarModoMateriaPrima(); recalcular(); });
   actualizarModoMateriaPrima();
 
   function recalcular(){
-    const materiaPrimaId = wrap.querySelector('#fMateriaPrimaId').value;
+    const materiaPrimaId = getMateriaPrimaId();
     const horas = Number(wrap.querySelector('#fHoras').value)||0;
     const tarifa = Number(wrap.querySelector('#fTarifa').value)||0;
     const pctInd = Number(wrap.querySelector('#fPctInd').value)||0;
@@ -3342,7 +3362,7 @@ function openEditarPreciosMasivoModal(main){
 function openSublimarModal(main){
   const wrap = document.createElement('div');
   wrap.className = 'overlay';
-  const materiasPrimasTodas = state.productos.filter(p=>p.categoria==='materia_prima');
+  const materiasPrimasTodas = state.productos.filter(p=>p.categoria==='materia_prima').sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
   const materiasPrimas = materiasPrimasTodas.filter(p=>stockPropio(p.id)>0);
 
   if(!materiasPrimasTodas.length){
