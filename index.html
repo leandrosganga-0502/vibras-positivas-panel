@@ -1819,11 +1819,12 @@ function openCosteoModal(prodId, onDone){
     const horas = Number(wrap.querySelector('#fHoras').value)||0;
     const tarifa = Number(wrap.querySelector('#fTarifa').value)||0;
     const pctInd = Number(wrap.querySelector('#fPctInd').value)||0;
-    let materiales, proceso, pctProceso = 0, detalleInsumos = [], detalleMP = [];
+    let materiales, costoPrincipal = 0, proceso, pctProceso = 0, detalleInsumos = [], detalleMP = [];
 
     if(materiaPrimaId){
       const mp = findProd(materiaPrimaId);
-      materiales = mp ? (mp.costo||0) : 0;
+      costoPrincipal = mp ? (mp.costo||0) : 0;
+      materiales = costoPrincipal;
       for(const f of leerFilasRecetaMP()){
         const otraMp = findProd(f.insumoId);
         const costoUnit = otraMp ? (otraMp.costo||0) : 0;
@@ -1851,8 +1852,9 @@ function openCosteoModal(prodId, onDone){
     const total = directo+indirecto;
 
     wrap.querySelector('#breakdownBox').innerHTML = `
-      <div class="breakdown-row"><span>Materia prima${materiaPrimaId?' (vinculada)':''}</span><b>${money(materiales)}</b></div>
+      <div class="breakdown-row"><span>Materia prima${materiaPrimaId?' principal (vinculada)':''}</span><b>${money(materiaPrimaId?costoPrincipal:materiales)}</b></div>
       ${materiaPrimaId ? detalleMP.map(d=>`<div class="breakdown-row"><span>· ${escapeHtml(d.nombre)} (${d.cantidad})</span><b>${money(d.subtotal)}</b></div>`).join('') : ''}
+      ${materiaPrimaId && detalleMP.length ? `<div class="breakdown-row"><span><i>Subtotal materia prima</i></span><b><i>${money(materiales)}</i></b></div>` : ''}
       <div class="breakdown-row"><span>Mano de obra (${horas} h × ${money(tarifa)})</span><b>${money(manoObra)}</b></div>
       ${materiaPrimaId
         ? detalleInsumos.map(d=>`<div class="breakdown-row"><span>· ${escapeHtml(d.nombre)} (${d.cantidad})</span><b>${money(d.subtotal)}</b></div>`).join('') || '<div class="breakdown-row"><span>Insumos</span><b>$0</b></div>'
