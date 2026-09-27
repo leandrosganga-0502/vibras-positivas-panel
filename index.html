@@ -855,7 +855,10 @@ function margenPct(p){
 }
 
 function costoInsumosPorUnidad(productoTerminadoId){
-  const filas = recetaDe(productoTerminadoId);
+  const filas = recetaDe(productoTerminadoId).filter(r=>{
+    const prod = findProd(r.insumoId);
+    return !prod || prod.categoria==='insumo';
+  });
   let total = 0;
   const detalle = [];
   for(const r of filas){
@@ -864,6 +867,25 @@ function costoInsumosPorUnidad(productoTerminadoId){
     const subtotal = costoUnit * (r.cantidadPorUnidad||0);
     total += subtotal;
     detalle.push({insumoId:r.insumoId, nombre: insumo?insumo.nombre:'(insumo eliminado)', cantidadPorUnidad:r.cantidadPorUnidad, costoUnit, subtotal});
+  }
+  return {total, detalle};
+}
+
+// Materias primas ADICIONALES a la principal (p.materiaPrimaId), para productos que combinan
+// más de una (ej: bolsa de friselina + una fracción de metro de DTF textil).
+function costoMateriasPrimasAdicionalesPorUnidad(productoTerminadoId){
+  const filas = recetaDe(productoTerminadoId).filter(r=>{
+    const prod = findProd(r.insumoId);
+    return prod && prod.categoria==='materia_prima';
+  });
+  let total = 0;
+  const detalle = [];
+  for(const r of filas){
+    const mp = findProd(r.insumoId);
+    const costoUnit = mp ? (mp.costo||0) : 0;
+    const subtotal = costoUnit * (r.cantidadPorUnidad||0);
+    total += subtotal;
+    detalle.push({materiaPrimaId:r.insumoId, nombre: mp?mp.nombre:'(materia prima eliminada)', cantidadPorUnidad:r.cantidadPorUnidad, costoUnit, subtotal});
   }
   return {total, detalle};
 }
@@ -884,7 +906,7 @@ function costeoAbsorcion(p){
   let materiales, proceso, pctProceso = null;
   if(usaReceta){
     const mp = findProd(p.materiaPrimaId);
-    materiales = mp ? (mp.costo||0) : 0;
+    materiales = (mp ? (mp.costo||0) : 0) + costoMateriasPrimasAdicionalesPorUnidad(p.id).total;
     proceso = costoInsumosPorUnidad(p.id).total;
   }else{
     materiales = p.costoMateriales || 0;
@@ -1641,7 +1663,14 @@ function openCosteoModal(prodId, onDone){
       </div>
       <div class="field" id="fldMaterialesManual"><label>Materia prima (superficie a sublimar)</label><input id="fMateriales" type="number" value="${p.costoMateriales||0}"></div>
 
-      <div id="fldReceta" style="display:none;">
+      <div id="fldRecetaMP" style="display:none;margin-top:10px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;">Materias primas adicionales por unidad (ej: DTF por metro, además de la principal)</label>
+        <div id="recetaRowsMP"></div>
+        <button type="button" class="btn btn-outline btn-sm" id="btnAgregarMP" style="margin-top:6px;">+ Agregar materia prima</button>
+        <div class="field-note" style="margin-top:8px;">Usalo cuando el producto combina más de una materia prima (ej: bolsa de friselina + 0,3 m de DTF textil). La cantidad va en la unidad de compra de esa materia prima (metros, unidades, etc.).</div>
+      </div>
+
+      <div id="fldReceta" style="display:none;margin-top:10px;">
         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;">Insumos que consume por unidad (tinta, vinilo, etc.)</label>
         <div id="recetaRows"></div>
         <button type="button" class="btn btn-outline btn-sm" id="btnAgregarInsumo" style="margin-top:6px;">+ Agregar insumo</button>
@@ -1709,7 +1738,7 @@ function openCosteoModal(prodId, onDone){
       cantidadPorUnidad: Number(fila.querySelector('.receta-cantidad').value)||0,
     }));
   }
-  let filasReceta = recetaActual.map(r=>({insumoId:r.insumoId, cantidadPorUnidad:r.cantidadPorUnidad}));
+  let filasReceta = recetaActual.filter(r=>{ const prod=findProd(r.insumoId); return !prod || prod.categoria==='insumo'; }).map(r=>({insumoId:r.insumoId, cantidadPorUnidad:r.cantidadPorUnidad}));
   if(insumos.length) pintarFilasReceta(filasReceta);
   else wrap.querySelector('#recetaRows').innerHTML = '<div class="field-note">Todavía no cargaste ningún insumo (tinta, vinilo, etc.) como producto. Agregalos desde "+ Nuevo producto" con la categoría "Insumo".</div>';
 
@@ -1720,13 +1749,67 @@ function openCosteoModal(prodId, onDone){
     recalcular();
   });
 
+  // --- Materias primas ADICIONALES (misma mecánica que insumos, pero eligiendo entre materias primas) ---
+  function pintarFilasRecetaMP(filas){
+    const cont = wrap.querySelector('#recetaRowsMP');
+    const opciones = materiasPrimas.filter(mp=>mp.id !== wrap.querySelector('#fMateriaPrimaId').value);
+    cont.innerHTML = filas.map((f,i)=>`
+      <div class="field-row" data-filaMP="${i}" style="margin-bottom:8px;align-items:flex-end;">
+        <div class="field" style="margin-bottom:0;">
+          <select class="receta-mp">
+            ${opciones.map(mp=>`<option value="${mp.id}" ${f.insumoId===mp.id?'selected':''}>${escapeHtml(mp.nombre)} (${money(mp.costo)})</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0;display:flex;gap:6px;">
+          <input class="receta-mp-cantidad" type="number" step="0.01" value="${f.cantidadPorUnidad||0}" style="flex:1;">
+          <button type="button" class="btn-icon receta-mp-quitar" title="Quitar">✕</button>
+        </div>
+      </div>
+    `).join('') || '<div class="field-note">Sin materias primas adicionales cargadas.</div>';
+    cont.querySelectorAll('.receta-mp-quitar').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const fila = b.closest('[data-filaMP]');
+        const idx = Number(fila.dataset.filamp);
+        filasRecetaMP.splice(idx,1);
+        pintarFilasRecetaMP(filasRecetaMP);
+        recalcular();
+      });
+    });
+    cont.querySelectorAll('.receta-mp, .receta-mp-cantidad').forEach(el=>{
+      el.addEventListener('input', ()=>{
+        filasRecetaMP = leerFilasRecetaMP();
+        recalcular();
+      });
+    });
+  }
+  function leerFilasRecetaMP(){
+    return [...wrap.querySelectorAll('#recetaRowsMP [data-filaMP]')].map(fila=>({
+      insumoId: fila.querySelector('.receta-mp').value,
+      cantidadPorUnidad: Number(fila.querySelector('.receta-mp-cantidad').value)||0,
+    }));
+  }
+  let filasRecetaMP = recetaActual.filter(r=>{ const prod=findProd(r.insumoId); return prod && prod.categoria==='materia_prima'; }).map(r=>({insumoId:r.insumoId, cantidadPorUnidad:r.cantidadPorUnidad}));
+  if(materiasPrimas.length > 1) pintarFilasRecetaMP(filasRecetaMP);
+  else wrap.querySelector('#recetaRowsMP').innerHTML = '<div class="field-note">Necesitás al menos otra materia prima cargada para agregarla acá.</div>';
+
+  wrap.querySelector('#btnAgregarMP').addEventListener('click', ()=>{
+    const vinculada = wrap.querySelector('#fMateriaPrimaId').value;
+    const disponibles = materiasPrimas.filter(mp=>mp.id !== vinculada);
+    if(!disponibles.length){ toast('No hay otra materia prima cargada para agregar'); return; }
+    filasRecetaMP.push({insumoId: disponibles[0].id, cantidadPorUnidad: 0});
+    pintarFilasRecetaMP(filasRecetaMP);
+    recalcular();
+  });
+
   function actualizarModoMateriaPrima(){
     const vinculada = wrap.querySelector('#fMateriaPrimaId').value;
     const usaReceta = !!vinculada;
     wrap.querySelector('#fldMaterialesManual').style.display = usaReceta ? 'none' : '';
     wrap.querySelector('#fldReceta').style.display = usaReceta ? '' : 'none';
+    wrap.querySelector('#fldRecetaMP').style.display = usaReceta ? '' : 'none';
     wrap.querySelector('#fldPctProceso').style.display = usaReceta ? 'none' : '';
     wrap.querySelector('#notaPctProceso').style.display = usaReceta ? 'none' : '';
+    if(usaReceta) pintarFilasRecetaMP(filasRecetaMP);
   }
   wrap.querySelector('#fMateriaPrimaId').addEventListener('change', ()=>{ actualizarModoMateriaPrima(); recalcular(); });
   actualizarModoMateriaPrima();
@@ -1736,11 +1819,18 @@ function openCosteoModal(prodId, onDone){
     const horas = Number(wrap.querySelector('#fHoras').value)||0;
     const tarifa = Number(wrap.querySelector('#fTarifa').value)||0;
     const pctInd = Number(wrap.querySelector('#fPctInd').value)||0;
-    let materiales, proceso, pctProceso = 0, detalleInsumos = [];
+    let materiales, proceso, pctProceso = 0, detalleInsumos = [], detalleMP = [];
 
     if(materiaPrimaId){
       const mp = findProd(materiaPrimaId);
       materiales = mp ? (mp.costo||0) : 0;
+      for(const f of leerFilasRecetaMP()){
+        const otraMp = findProd(f.insumoId);
+        const costoUnit = otraMp ? (otraMp.costo||0) : 0;
+        const subtotal = costoUnit * f.cantidadPorUnidad;
+        materiales += subtotal;
+        detalleMP.push({nombre: otraMp?otraMp.nombre:'—', cantidad:f.cantidadPorUnidad, subtotal});
+      }
       proceso = 0;
       for(const f of leerFilasReceta()){
         const ins = findProd(f.insumoId);
@@ -1762,6 +1852,7 @@ function openCosteoModal(prodId, onDone){
 
     wrap.querySelector('#breakdownBox').innerHTML = `
       <div class="breakdown-row"><span>Materia prima${materiaPrimaId?' (vinculada)':''}</span><b>${money(materiales)}</b></div>
+      ${materiaPrimaId ? detalleMP.map(d=>`<div class="breakdown-row"><span>· ${escapeHtml(d.nombre)} (${d.cantidad})</span><b>${money(d.subtotal)}</b></div>`).join('') : ''}
       <div class="breakdown-row"><span>Mano de obra (${horas} h × ${money(tarifa)})</span><b>${money(manoObra)}</b></div>
       ${materiaPrimaId
         ? detalleInsumos.map(d=>`<div class="breakdown-row"><span>· ${escapeHtml(d.nombre)} (${d.cantidad})</span><b>${money(d.subtotal)}</b></div>`).join('') || '<div class="breakdown-row"><span>Insumos</span><b>$0</b></div>'
@@ -1790,9 +1881,10 @@ function openCosteoModal(prodId, onDone){
     p.costoProcesoPctOverride = vals.materiaPrimaId ? null : ((vals.pctProceso===state.config.costoProcesoPct) ? null : vals.pctProceso);
     p.gastosIndirectosPctOverride = (vals.pctInd===state.config.gastosIndirectosPct) ? null : vals.pctInd;
 
-    const nuevasFilas = vals.materiaPrimaId ? leerFilasReceta().filter(f=>f.insumoId && f.cantidadPorUnidad>0) : [];
+    const nuevasFilasInsumos = vals.materiaPrimaId ? leerFilasReceta().filter(f=>f.insumoId && f.cantidadPorUnidad>0) : [];
+    const nuevasFilasMP = vals.materiaPrimaId ? leerFilasRecetaMP().filter(f=>f.insumoId && f.cantidadPorUnidad>0) : [];
     state.recetas = state.recetas.filter(r=>r.productoTerminadoId!==p.id);
-    nuevasFilas.forEach(f=>{
+    [...nuevasFilasInsumos, ...nuevasFilasMP].forEach(f=>{
       state.recetas.push({id: uid('r'), productoTerminadoId: p.id, insumoId: f.insumoId, cantidadPorUnidad: f.cantidadPorUnidad});
     });
     await aplicarCosteoAbsorcion(p); // recalcula ya con la receta actualizada en state.recetas
@@ -3452,9 +3544,10 @@ function openSublimarModal(main){
       nuevos.push({id:uid('m'), tipo:'produccion_terminado', productoId:p.id, productoNombre:p.nombre, cantidad, precioUnitario:0, total:0, fecha, detalle:'Sublimado', loteId});
       nuevos.push({id:uid('m'), tipo:'consumo_materia_prima', productoId:mp.id, productoNombre:mp.nombre, cantidad, precioUnitario:0, total:0, fecha, detalle:`Consumo para ${p.nombre}`, loteId});
       for(const r of receta){
-        const ins = findProd(r.insumoId);
-        if(!ins) continue;
-        nuevos.push({id:uid('m'), tipo:'consumo_insumo', productoId:ins.id, productoNombre:ins.nombre, cantidad: r.cantidadPorUnidad*cantidad, precioUnitario:0, total:0, fecha, detalle:`Consumo para ${p.nombre}`, loteId});
+        const comp = findProd(r.insumoId);
+        if(!comp) continue;
+        const esMateriaPrima = comp.categoria==='materia_prima';
+        nuevos.push({id:uid('m'), tipo: esMateriaPrima?'consumo_materia_prima':'consumo_insumo', productoId:comp.id, productoNombre:comp.nombre, cantidad: r.cantidadPorUnidad*cantidad, precioUnitario:0, total:0, fecha, detalle:`Consumo para ${p.nombre}`, loteId});
       }
       nuevos.forEach(m=>{ state.movimientos.push(m); syncBackend('guardarMovimiento', {movimiento:m}); });
       wrap._registrado = true;
