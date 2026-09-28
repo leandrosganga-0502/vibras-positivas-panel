@@ -372,7 +372,8 @@ function campoFechaHTML(id, valorISO, label){
     <div class="field">
       ${label ? `<label>${label}</label>` : ''}
       <div style="position:relative;">
-        <input type="text" id="${id}_texto" readonly value="${formatearFecha(valorISO)}" style="cursor:pointer;">
+        <input type="text" id="${id}_texto" readonly value="${formatearFecha(valorISO)}" style="cursor:pointer;padding-right:34px;">
+        <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:15px;">📅</span>
         <input type="date" id="${id}" value="${valorISO}" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
       </div>
     </div>`;
@@ -383,6 +384,13 @@ function initCampoFecha(wrap, id){
   if(!real || !texto) return;
   real.addEventListener('input', ()=>{ texto.value = formatearFecha(real.value); });
   real.addEventListener('change', ()=>{ texto.value = formatearFecha(real.value); });
+  // El <input type="date"> invisible queda encima del campo de texto (recibe el click
+  // directamente), pero forzamos showPicker() igual por si el navegador no lo abre solo.
+  real.addEventListener('click', ()=>{
+    if(typeof real.showPicker === 'function'){
+      try{ real.showPicker(); }catch(e){ /* algunos navegadores lo tiran si no hay gesto reciente, no pasa nada */ }
+    }
+  });
 }
 function uid(prefix){
   return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
