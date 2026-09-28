@@ -402,6 +402,29 @@ function money(n){
 function pct(n){
   return (n>=0?'+':'') + n.toFixed(1) + '%';
 }
+// Permite escribir cantidades como fracción (ej: "1/6", "1/100", "1/2" para media hora)
+// en vez de tener que calcular el decimal a mano. Si no es una fracción, se toma como número normal.
+function parsearFraccion(texto){
+  if(texto==null) return 0;
+  const s = String(texto).trim().replace(',', '.');
+  const m = /^(-?\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/.exec(s);
+  if(m){
+    const num = parseFloat(m[1]), den = parseFloat(m[2]);
+    return den ? num/den : 0;
+  }
+  return Number(s)||0;
+}
+// Redondea a 4 decimales para evitar el ruido de coma flotante (ej: 0.8333333333333336)
+// que aparece al multiplicar fracciones repetidas (1/6 × 5 unidades, etc.).
+function redondearCantidad(n){
+  return Math.round((Number(n)||0) * 10000) / 10000;
+}
+// Muestra la cantidad ya redondeada y sin ceros de más (0.5 en vez de 0.500000001).
+function formatCantidad(n){
+  const r = redondearCantidad(n);
+  if(Number.isInteger(r)) return String(r);
+  return String(r); // redondearCantidad ya deja como máximo 4 decimales, sin basura
+}
 function toast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1687,7 +1710,7 @@ function openCosteoModal(prodId, onDone){
       <div style="height:1px;background:var(--border);margin:16px 0;"></div>
 
       <div class="field-row">
-        <div class="field"><label>Horas de diseño</label><input id="fHoras" type="number" step="0.25" value="${p.horasDiseno||0}"></div>
+        <div class="field"><label>Horas de diseño</label><input id="fHoras" type="text" inputmode="decimal" placeholder="ej: 0.5 o 1/2" value="${p.horasDiseno||0}"></div>
         <div class="field"><label>Tarifa por hora</label><input id="fTarifa" type="number" value="${(p.tarifaHoraOverride!=null)?p.tarifaHoraOverride:state.config.tarifaHoraDiseno}"></div>
       </div>
       <div class="field-note" style="margin:-8px 0 12px;">Por defecto usa la tarifa global (${money(state.config.tarifaHoraDiseno)}/h). Podés pisarla acá solo para este producto.</div>
@@ -1718,7 +1741,7 @@ function openCosteoModal(prodId, onDone){
           </select>
         </div>
         <div class="field" style="margin-bottom:0;display:flex;gap:6px;">
-          <input class="receta-cantidad" type="number" step="0.01" value="${f.cantidadPorUnidad||0}" style="flex:1;">
+          <input class="receta-cantidad" type="text" inputmode="decimal" placeholder="ej: 0.1 o 1/6" value="${f.cantidadPorUnidad||0}" style="flex:1;">
           <button type="button" class="btn-icon receta-quitar" title="Quitar">✕</button>
         </div>
       </div>
@@ -1742,7 +1765,7 @@ function openCosteoModal(prodId, onDone){
   function leerFilasReceta(){
     return [...wrap.querySelectorAll('#recetaRows [data-fila]')].map(fila=>({
       insumoId: fila.querySelector('.receta-insumo').value,
-      cantidadPorUnidad: Number(fila.querySelector('.receta-cantidad').value)||0,
+      cantidadPorUnidad: redondearCantidad(parsearFraccion(fila.querySelector('.receta-cantidad').value)),
     }));
   }
   let filasReceta = recetaActual.filter(r=>{ const prod=findProd(r.insumoId); return !prod || prod.categoria==='insumo'; }).map(r=>({insumoId:r.insumoId, cantidadPorUnidad:r.cantidadPorUnidad}));
@@ -1777,7 +1800,7 @@ function openCosteoModal(prodId, onDone){
           </select>
         </div>
         <div class="field" style="margin-bottom:0;display:flex;gap:6px;">
-          <input class="receta-mp-cantidad" type="number" step="0.01" value="${f.cantidadPorUnidad||0}" style="flex:1;">
+          <input class="receta-mp-cantidad" type="text" inputmode="decimal" placeholder="ej: 0.3 o 1/3" value="${f.cantidadPorUnidad||0}" style="flex:1;">
           <button type="button" class="btn-icon receta-mp-quitar" title="Quitar">✕</button>
         </div>
       </div>
@@ -1801,7 +1824,7 @@ function openCosteoModal(prodId, onDone){
   function leerFilasRecetaMP(){
     return [...wrap.querySelectorAll('#recetaRowsMP [data-filaMP]')].map(fila=>({
       insumoId: fila.querySelector('.receta-mp').value,
-      cantidadPorUnidad: Number(fila.querySelector('.receta-mp-cantidad').value)||0,
+      cantidadPorUnidad: redondearCantidad(parsearFraccion(fila.querySelector('.receta-mp-cantidad').value)),
     }));
   }
   let filasRecetaMP = recetaActual.filter(r=>{ const prod=findProd(r.insumoId); return prod && prod.categoria==='materia_prima'; }).map(r=>({insumoId:r.insumoId, cantidadPorUnidad:r.cantidadPorUnidad}));
@@ -1844,7 +1867,7 @@ function openCosteoModal(prodId, onDone){
 
   function recalcular(){
     const materiaPrimaId = getMateriaPrimaId();
-    const horas = Number(wrap.querySelector('#fHoras').value)||0;
+    const horas = redondearCantidad(parsearFraccion(wrap.querySelector('#fHoras').value));
     const tarifa = Number(wrap.querySelector('#fTarifa').value)||0;
     const pctInd = Number(wrap.querySelector('#fPctInd').value)||0;
     let materiales, costoPrincipal = 0, proceso, pctProceso = 0, detalleInsumos = [], detalleMP = [];
@@ -2015,7 +2038,7 @@ function openProductoModal(){
         <div class="field" id="fldMateriales"><label id="lblMateriales">Materia prima (superficie)</label><input id="fMateriales" type="number" placeholder="0"></div>
       </div>
       <div class="field-row" id="fldHorasProceso">
-        <div class="field"><label>Horas de diseño</label><input id="fHoras" type="number" step="0.25" placeholder="0"></div>
+        <div class="field"><label>Horas de diseño</label><input id="fHoras" type="text" inputmode="decimal" placeholder="ej: 0.5 o 1/2"></div>
         <div class="field"><label>% Costo de proceso</label><input id="fPctProceso" type="number" value="${state.config.costoProcesoPct}"></div>
       </div>
       <div class="field-note" id="notaProceso" style="margin:-8px 0 12px;">Tinta, luz e insumos de sublimado, como % sobre la materia prima.</div>
@@ -2068,7 +2091,7 @@ function openProductoModal(){
         costoAnterior: null,
         fechaCambioCosto: null,
         costoMateriales: Number(wrap.querySelector('#fMateriales').value)||0,
-        horasDiseno: Number(wrap.querySelector('#fHoras').value)||0,
+        horasDiseno: redondearCantidad(parsearFraccion(wrap.querySelector('#fHoras').value)),
         tarifaHoraOverride: null,
         costoProcesoPctOverride: (pctProceso===state.config.costoProcesoPct) ? null : pctProceso,
         gastosIndirectosPctOverride: (pctInd===state.config.gastosIndirectosPct) ? null : pctInd,
@@ -2153,7 +2176,7 @@ async function renderMovimientos(main){
       <td class="mono" style="white-space:nowrap;">${formatearFecha(m.fecha)}</td>
       <td><span class="badge ${info.badge}">${info.ic} ${info.label}</span></td>
       <td>${escapeHtml(m.productoNombre)}${m.sobrenombre?` <span class="badge badge-teal">${escapeHtml(m.sobrenombre)}</span>`:''}</td>
-      <td class="mono">${m.cantidad}</td>
+      <td class="mono">${formatCantidad(m.cantidad)}</td>
       <td class="mono">${m.total?money(m.total):'—'}</td>
       <td style="color:var(--ink-soft);font-size:12.5px;">${escapeHtml(m.detalle||'—')}</td>
       <td>
@@ -3501,10 +3524,10 @@ function openSublimarModal(main){
         receta = recetaDe(p.id);
         for(const r of receta){
           const ins = findProd(r.insumoId);
-          const necesario = r.cantidadPorUnidad * cantidad;
+          const necesario = redondearCantidad(r.cantidadPorUnidad * cantidad);
           const disp = ins ? stockPropio(ins.id) : 0;
           if(disp < necesario) hayFaltante = true;
-          filasHtml += `<div class="breakdown-row"><span>${escapeHtml(ins?ins.nombre:'—')}</span><b style="color:${disp<necesario?'var(--red)':'var(--text)'};">${necesario} / disp. ${disp}</b></div>`;
+          filasHtml += `<div class="breakdown-row"><span>${escapeHtml(ins?ins.nombre:'—')}</span><b style="color:${disp<necesario?'var(--red)':'var(--text)'};">${formatCantidad(necesario)} / disp. ${formatCantidad(disp)}</b></div>`;
         }
         costoUnit = costeoAbsorcion(p).total;
       }
@@ -3577,7 +3600,7 @@ function openSublimarModal(main){
         const comp = findProd(r.insumoId);
         if(!comp) continue;
         const esMateriaPrima = comp.categoria==='materia_prima';
-        nuevos.push({id:uid('m'), tipo: esMateriaPrima?'consumo_materia_prima':'consumo_insumo', productoId:comp.id, productoNombre:comp.nombre, cantidad: r.cantidadPorUnidad*cantidad, precioUnitario:0, total:0, fecha, detalle:`Consumo para ${p.nombre}`, loteId});
+        nuevos.push({id:uid('m'), tipo: esMateriaPrima?'consumo_materia_prima':'consumo_insumo', productoId:comp.id, productoNombre:comp.nombre, cantidad: redondearCantidad(r.cantidadPorUnidad*cantidad), precioUnitario:0, total:0, fecha, detalle:`Consumo para ${p.nombre}`, loteId});
       }
       nuevos.forEach(m=>{ state.movimientos.push(m); syncBackend('guardarMovimiento', {movimiento:m}); });
       wrap._registrado = true;
