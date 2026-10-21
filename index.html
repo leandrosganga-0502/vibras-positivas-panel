@@ -2799,7 +2799,7 @@ function openVentaDirectaModal(main){
     return disponibles.filter(p=>!term || p.nombre.toLowerCase().includes(term) || (p.codigo||'').toLowerCase().includes(term));
   }
   function valorDe(p){
-    return valores[p.id] || {checked:false, cantidad:1, precio:p.precioVenta||0};
+    return valores[p.id] || {checked:false, cantidad:1, precio:p.precioVenta||0, obs:''};
   }
   function pintarTotal(){
     const sel = Object.entries(valores).filter(([id,v])=>v.checked && v.cantidad>0);
@@ -2815,7 +2815,8 @@ function openVentaDirectaModal(main){
       return `
         <tr data-prod="${p.id}">
           <td><input type="checkbox" class="fila-check" ${v.checked?'checked':''}></td>
-          <td><div class="prod-name">${escapeHtml(p.nombre)}</div><div class="prod-code mono">${escapeHtml(p.codigoInterno||'—')}</div></td>
+          <td><div class="prod-name">${escapeHtml(p.nombre)}</div><div class="prod-code mono">${escapeHtml(p.codigoInterno||'—')}</div>
+            <input type="text" class="fila-obs" autocomplete="off" placeholder="Observación (ej: trabajo para Laura, 30 llaveros)" value="${escapeHtml(v.obs||'')}" style="width:100%;margin-top:6px;font-size:12px;padding:6px 8px;"></td>
           <td class="mono">${formatCantidad(disp)}</td>
           <td><input type="number" class="fila-cantidad mono" min="1" max="${disp}" value="${v.cantidad}" style="width:80px;"></td>
           <td><input type="number" class="fila-precio mono" min="0" value="${v.precio}" style="width:100px;"></td>
@@ -2828,17 +2829,19 @@ function openVentaDirectaModal(main){
       const chk = tr.querySelector('.fila-check');
       const iCant = tr.querySelector('.fila-cantidad');
       const iPrecio = tr.querySelector('.fila-precio');
+      const iObs = tr.querySelector('.fila-obs');
       const sub = tr.querySelector('.fila-subtotal');
       const leer = (marcar)=>{
         const cantidad = Number(iCant.value)||0, precio = Number(iPrecio.value)||0;
         if(marcar) chk.checked = true;
-        valores[p.id] = {checked: chk.checked, cantidad, precio};
+        valores[p.id] = {checked: chk.checked, cantidad, precio, obs: iObs.value};
         sub.textContent = money(cantidad*precio);
         pintarTotal();
       };
       chk.addEventListener('change', ()=>leer(false));
       iCant.addEventListener('input', ()=>leer(true));
       iPrecio.addEventListener('input', ()=>leer(true));
+      iObs.addEventListener('input', ()=>leer(true));
     });
     pintarTotal();
   }
@@ -2859,11 +2862,12 @@ function openVentaDirectaModal(main){
       const fecha = wrap.querySelector('#fFechaVD').value || hoyISO();
       const comprador = wrap.querySelector('#fCompradorVD').value.trim();
       const medio = wrap.querySelector('#fMedioPagoVD').value;
-      const detalle = [comprador && `Comprador: ${comprador}`, medio && `Pago: ${medio}`].filter(Boolean).join(' · ');
       const loteId = uid('venta');
       for(const [prodId, v] of aVender){
         const p = findProd(prodId);
         if(!p) continue;
+        const obs = (v.obs||'').trim();
+        const detalle = [comprador && `Comprador: ${comprador}`, medio && `Pago: ${medio}`, obs && `Obs: ${obs}`].filter(Boolean).join(' · ');
         const mov = {
           id: uid('m'), tipo:'venta', productoId:p.id, productoNombre:p.nombre,
           cantidad: v.cantidad, precioUnitario: v.precio, total: v.cantidad*v.precio, fecha,
